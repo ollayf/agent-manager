@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Launch Claude Code under a named, separate account/profile.
+#
+#   claude-profile <name> [claude args...]
+#
+# Each profile gets its own config dir (~/.claude-profiles/<name>) and thus its own login,
+# while INHERITING everything from primary `claude` (~/.claude): plugins, skills, agents,
+# commands, hooks (symlinks), enabled-plugin state + marketplaces and user-scope MCP servers
+# (mirrored on every launch), and MCP OAuth tokens (via claude-mcp-sync). Source of truth for
+# all shared state = primary `claude`. Adding a new account (claude3, ...) needs no new script:
+# just `claude-profile claude3`.
+#
+# Your normal `claude` command (primary) remains untouched.
+#
+# Managed by claude-manager: this file is the repo's copy, symlinked into ~/.local/bin.
+# Profiles are listed in config/profiles.list; per-account settings in config/profiles/.
+
+if [ "$#" -lt 1 ]; then
+  echo "usage: claude-profile <name> [claude args...]" >&2
+  exit 2
+fi
+
+PROFILE="$1"; shift
+
+PRIMARY_CONFIG_DIR="${CLAUDE_PRIMARY_CONFIG_DIR:-$HOME/.claude}"
+export CLAUDE_CONFIG_DIR="${CLAUDE_PROFILES_HOME:-$HOME/.claude-profiles}/$PROFILE"
+mkdir -p "$CLAUDE_CONFIG_DIR"
+
+link_entry() {
+  local name="$1"
+  local src="${2:-$PRIMARY_CONFIG_DIR/$name}"
+  local dst="$CLAUDE_CONFIG_DIR/$name"
+
+  if [ ! -e "$src" ]; then
+    return 0
+  fi
+
+  if [ -L "$dst" ]; then
+    local target
+    target="$(readlink "$dst")"
+    if [ "$target" = "$src" ]; then
+      return 0
+    fi
+    rm "$dst"
+  elif [ -e "$dst" ]; then
+    local backup_dir="$CLAUDE_CONFIG_DIR/backups/plugin-sync-$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$backup_dir"
+    mv "$dst" "$backup_dir/$name"
+  fi
+
+  ln -s "$src" "$dst"
+}
+
+link_entry "plugins"
+MANAGER_CURRENT="${AGENT_MANAGER_CURRENT:-$HOME/.local/share/agent-manager/current}"
+link_entry "skills" "$MANAGER_CURRENT/skills"
+link_entry "CLAUDE.md" "$MANAGER_CURRENT/config/shared/instructions.md"
+link_entry "agents"
+link_entry "commands"
+link_entry "hooks"
+link_entry "projects"
+link_entry "sessions"
+link_entry "history.jsonl"
+link_entry "file-history"
+
+# Plugin parity: mirror the *enabled plugins* + marketplaces from primary (~/.claude)
+# into this profile's settings.json, while preserving this profile's own identity
+# (env, model, tui, skip* prompts). Plugin CODE and marketplace registries are already
+# shared via the "plugins" symlink above; this only syncs the on/off enablement state.
+#
+# Source of truth = primary `claude` (~/.claude). To enable/disable a plugin for BOTH
+# accounts, do it from `claude`. Toggling inside a profile session is transient — it
+# gets overwritten from primary on the next launch. Skills are the "skills" symlink
+# above, so they are shared bidirectionally and instantly (no sync needed).
+PRIMARY_SETTINGS="$PRIMARY_CONFIG_DIR/settings.json"
+PROFILE_SETTINGS="$CLAUDE_CONFIG_DIR/settings.json"
+if [ -f "$PRIMARY_SETTINGS" ] && command -v jq >/dev/null 2>&1; then
+  [ -f "$PROFILE_SETTINGS" ] || echo '{}' > "$PROFILE_SETTINGS"
+  _tmp="$(mktemp)"
+  if jq --slurpfile p "$PRIMARY_SETTINGS" '
+        .enabledPlugins         = ($p[0].enabledPlugins // {})
+      | .extraKnownMarketplaces = ($p[0].extraKnownMarketplaces // {})
+    ' "$PROFILE_SETTINGS" > "$_tmp"; then
+    mv "$_tmp" "$PROFILE_SETTINGS"
+  else
+    rm -f "$_tmp"
+    echo "⚠️  $PROFILE: plugin sync skipped (settings.json parse failed)" >&2
+  fi
+fi
+
+# Per-account overlay: apply this profile's versioned settings (model, theme, tui, skip
+# prompts) from the repo, so they live in git rather than only in the untracked profile dir.
+# Applied AFTER the plugin mirror above, so the overlay wins on any key it names.
+HELPERS_DIR="${CLAUDE_HELPERS:-$MANAGER_CURRENT}"
+PROFILE_OVERLAY="$HELPERS_DIR/config/profiles/$PROFILE.json"
+if [ -f "$PROFILE_OVERLAY" ] && [ -f "$PROFILE_SETTINGS" ] && command -v jq >/dev/null 2>&1; then
+  _tmp="$(mktemp)"
+  if jq -s '.[0] * .[1]' "$PROFILE_SETTINGS" "$PROFILE_OVERLAY" > "$_tmp" && [ -s "$_tmp" ]; then
+    mv "$_tmp" "$PROFILE_SETTINGS"
+  else
+    rm -f "$_tmp"
+    echo "⚠️  $PROFILE: settings overlay skipped (parse failed)" >&2
+  fi
+fi
+
+# MCP parity: mirror user-scope MCP servers from primary into this profile's .claude.json,
+# preserving everything else in this profile's config. Same model as plugins above: source of
+# truth = primary `claude`. A server added ONLY under this profile is transient (overwritten
+# next launch). To add an MCP server for BOTH accounts, add it under `claude` at user scope.
+# NOTE: primary's config JSON is $HOME/.claude.json (CLAUDE_CONFIG_DIR unset for primary), NOT
+# $PRIMARY_CONFIG_DIR/.claude.json — that path is an unrelated stub.
+PRIMARY_CLAUDE_JSON="$HOME/.claude.json"
+PROFILE_CLAUDE_JSON="$CLAUDE_CONFIG_DIR/.claude.json"
+if [ -f "$PRIMARY_CLAUDE_JSON" ] && [ -f "$PROFILE_CLAUDE_JSON" ] && command -v jq >/dev/null 2>&1; then
+  _tmp="$(mktemp)"
+  if jq --slurpfile p "$PRIMARY_CLAUDE_JSON" '.mcpServers = ($p[0].mcpServers // {})' \
+        "$PROFILE_CLAUDE_JSON" > "$_tmp" && [ -s "$_tmp" ]; then
+    mv "$_tmp" "$PROFILE_CLAUDE_JSON"
+  else
+    rm -f "$_tmp"
+    echo "⚠️  $PROFILE: MCP sync skipped (.claude.json parse failed)" >&2
+  fi
+fi
+
+# MCP OAuth token parity: share browser-OAuth MCP tokens (e.g. higgsfield) across every
+# account's Keychain slot, freshest-wins. Best-effort, never blocks launch.
+command -v claude-mcp-sync >/dev/null 2>&1 && claude-mcp-sync || true
+
+exec claude "$@"

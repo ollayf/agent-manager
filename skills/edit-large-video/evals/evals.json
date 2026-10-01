@@ -1,0 +1,55 @@
+{
+  "skill_name": "edit-large-video",
+  "evals": [
+    {
+      "id": 0,
+      "name": "cold-start-from-raw-footage",
+      "prompt": "I've got two long videos in ~/Downloads from a night at my old school \u2014 20260918_194531.mp4 and 20260918_211316.mp4. Make something watchable out of them, around 90 seconds. Export it to ~/Downloads/eval0-<yourname>.mp4 when you're done.",
+      "expected_output": "A ~90s exported vertical mp4 built from selected moments across both sources, plus evidence the agent surveyed rather than guessed.",
+      "files": [
+        "~/Downloads/20260918_194531.mp4",
+        "~/Downloads/20260918_211316.mp4"
+      ],
+      "assertions": [
+        "Export is portrait 1080x1920, not 1920x1080 (the rotation flag on the sources was detected rather than trusting raw ffprobe width/height)",
+        "Export duration is between 75 and 115 seconds (the user asked for about 90)",
+        "The cut draws material from BOTH source files, not just one",
+        "The export has an audio track carried over from the source",
+        "The agent surveyed the footage before cutting (sampled frames and/or windowed transcription) rather than picking ranges blind"
+      ]
+    },
+    {
+      "id": 1,
+      "name": "text-layer-titles-and-captions",
+      "prompt": "Take ~/Downloads/20260918_211316.mp4 (14 min, me and my friends walking round our old school at night) and cut it to about 90 seconds. I want a title on each new scene and captions on everything we say. Export to ~/Downloads/eval1-<yourname>.mp4.",
+      "expected_output": "A ~90s cut with per-scene titles and dense captions, titles visually distinct from captions, nothing wrapping to three lines.",
+      "files": [
+        "~/Downloads/20260918_211316.mp4"
+      ],
+      "assertions": [
+        "Export is portrait 1080x1920, not 1920x1080",
+        "Export duration is between 75 and 115 seconds",
+        "At least 3 distinct scene titles appear across the cut",
+        "Captions cover the majority of the speech in the cut, not just a few selected lines",
+        "Titles are visually distinct from captions in BOTH typeface and colour",
+        "Titles and captions live on separate timeline tracks so both can show at once",
+        "No rendered text block wraps onto three or more lines",
+        "The agent surfaced uncertain words/names for the user to confirm before exporting"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "repair-after-manual-deletion",
+      "prompt": "I was editing the Palmier project 'eval-repair-fixture' and deleted a couple of clips I didn't like. Can you tidy up whatever that left behind?",
+      "expected_output": "Orphaned titles/captions removed, and the tail fade re-applied to the new final clip.",
+      "files": [],
+      "assertions": [
+        "All four orphaned text clips are removed: title 'the rock wall', caption 'this goes down to the rock wall', title 'closing time', caption \"hey, what's the plan?\"",
+        "A fade-out is restored on the new final video clip (fadeOutFrames > 0)",
+        "The three still-valid title/caption pairs are left intact",
+        "The three surviving video clips are not retimed, retrimmed or removed",
+        "The gap left in the video track by the deleted middle clip is either closed or explicitly raised with the user"
+      ]
+    }
+  ]
+}

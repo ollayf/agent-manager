@@ -1,0 +1,276 @@
+#!/usr/bin/env bash
+#
+# claude-account — manage Claude Code accounts (profiles).
+#
+#   add <name> [--from <acct>] [--model <m>] [--login]
+#                   register a new account, write its settings overlay
+#   list            every account, who it is logged in as, and its model
+#   remove <name> [--purge]
+#                   unregister an account; --purge also archives its data
+#   --dry-run       print what would happen, change nothing
+#
+# config/profiles.list is the single source of truth: shell/claude.zsh defines one
+# function per line, and claude-profile applies config/profiles/<name>.json on launch.
+#
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../lib/common.sh
+source "$REPO/lib/common.sh"
+
+LIST="$REPO/config/profiles.list"
+OVERLAYS="$REPO/config/profiles"
+PROFILES_HOME="$HOME/.claude-profiles"
+
+# Names that already mean something in shell/claude.zsh or ~/.local/bin. Taking one of
+# these would shadow a working command in every future shell.
+RESERVED=(claude clauded claudep cskills use-glm use-claude
+          claude-account claude-skills claude-profile claude-mcp-sync
+          agent-manager agent-skills)
+
+usage() { sed -n '3,10p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+
+# ---------------------------------------------------------------- helpers
+
+accounts() { grep -vE '^[[:space:]]*(#|$)' "$LIST" 2>/dev/null || true; }
+is_account() { accounts | grep -qxF "$1"; }
+
+overlay_of() { printf '%s\n' "$OVERLAYS/$1.json"; }
+config_dir_of() { [ "$1" = claude ] && printf '%s\n' "$CLAUDE_DIR" || printf '%s\n' "$PROFILES_HOME/$1"; }
+
+# The config JSON holding the login. For primary this is $HOME/.claude.json — NOT
+# ~/.claude/.claude.json, which is an unrelated stub (same trap documented in claude-profile).
+claude_json_of() {
+  [ "$1" = claude ] && printf '%s\n' "$HOME/.claude.json" \
+                    || printf '%s\n' "$(config_dir_of "$1")/.claude.json"
+}
+
+# Who is this account logged in as? Empty if it has never been launched.
+logged_in_as() {
+  local j; j="$(claude_json_of "$1")"
+  [ -f "$j" ] || return 0
+  jq -r '.oauthAccount.emailAddress // empty' "$j" 2>/dev/null || true
+}
+
+model_of() {
+  local o; o="$(overlay_of "$1")"
+  if [ -f "$o" ]; then jq -r '.model // empty' "$o" 2>/dev/null; return; fi
+  # Primary keeps its model in settings.json rather than an overlay.
+  [ "$1" = claude ] && jq -r '.model // empty' "$CLAUDE_DIR/settings.json" 2>/dev/null || true
+}
+
+# Reject anything that would produce a broken directory, an unusable shell function,
+# or a name that quietly shadows a real command.
+validate_name() {
+  local n="$1" r
+  if ! printf '%s' "$n" | grep -qE '^[a-z][a-z0-9-]*$'; then
+    fail "'$n' is not a valid account name"
+    info "use lowercase letters, digits and hyphens, starting with a letter (e.g. claude4)"
+    return 1
+  fi
+  for r in "${RESERVED[@]}"; do
+    if [ "$n" = "$r" ]; then
+      fail "'$n' is reserved by claude-manager"
+      info "reserved: ${RESERVED[*]}"
+      return 1
+    fi
+  done
+  # Anything already on PATH would be shadowed by the generated shell function.
+  if command -v "$n" >/dev/null 2>&1 && ! is_account "$n"; then
+    fail "'$n' is already a command on your PATH ($(command -v "$n"))"
+    info "picking it would shadow that command in every future shell"
+    return 1
+  fi
+  return 0
+}
+
+wire_shared_profile_state() {
+  local name="$1" dir skills instructions
+  dir="$(config_dir_of "$name")"
+  skills="$dir/skills"
+  instructions="$dir/CLAUDE.md"
+  if [ ! -e "$MANAGER_CURRENT" ]; then
+    warn "active agent-manager checkout is not installed; run ./install.sh to wire shared skills"
+    return 0
+  fi
+  ensure_dir "$dir"
+  if [ ! -e "$skills" ] && [ ! -L "$skills" ]; then
+    run ln -s "$MANAGER_CURRENT/skills" "$skills"
+    ok "shared skills linked for '$name'"
+  elif [ ! -L "$skills" ] || [ "$(readlink "$skills")" != "$MANAGER_CURRENT/skills" ]; then
+    warn "$(shortp "$skills") has existing state; run agent-manager install to reconcile it safely"
+  fi
+  if [ ! -e "$instructions" ] && [ ! -L "$instructions" ]; then
+    run ln -s "$MANAGER_CURRENT/config/shared/instructions.md" "$instructions"
+    ok "shared instructions linked for '$name'"
+  elif [ ! -L "$instructions" ] || [ "$(readlink "$instructions")" != "$MANAGER_CURRENT/config/shared/instructions.md" ]; then
+    warn "$(shortp "$instructions") has existing state; run agent-manager install to reconcile it safely"
+  fi
+}
+
+# ---------------------------------------------------------------- add
+
+cmd_add() {
+  local name="" from="" model="" login=0
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --from)  from="${2:?--from needs an account name}"; shift 2 ;;
+      --model) model="${2:?--model needs a value}"; shift 2 ;;
+      --login) login=1; shift ;;
+      -*) fail "unknown flag: $1"; return 2 ;;
+      *)  [ -z "$name" ] || { fail "one account at a time"; return 2; }; name="$1"; shift ;;
+    esac
+  done
+  [ -n "$name" ] || { fail "usage: claude-account add <name>"; return 2; }
+
+  head1 "Adding account '$name'"
+
+  if is_account "$name"; then
+    ok "'$name' is already registered — nothing to do"
+    info "config dir: $(shortp "$(config_dir_of "$name")")"
+    return 0
+  fi
+  validate_name "$name" || return 1
+
+  # --- the settings overlay ---
+  local overlay; overlay="$(overlay_of "$name")"
+  local body
+  if [ -n "$from" ]; then
+    is_account "$from" || { fail "--from '$from' is not a registered account"; return 1; }
+    [ -f "$(overlay_of "$from")" ] || { fail "'$from' has no overlay to copy"; return 1; }
+    body="$(cat "$(overlay_of "$from")")"
+    info "copying settings from '$from'"
+  else
+    body='{
+  "model": "opus",
+  "tui": "fullscreen",
+  "skipDangerousModePermissionPrompt": true,
+  "skipAutoPermissionPrompt": true
+}'
+  fi
+  [ -n "$model" ] && body="$(printf '%s' "$body" | jq --arg m "$model" '.model = $m')"
+
+  # --- write both files ---
+  if [ "$DRY_RUN" = 1 ]; then
+    run "append '$name' to $(shortp "$LIST")"
+    run "write $(shortp "$overlay")"
+  else
+    printf '%s\n' "$name" >> "$LIST"
+    ensure_dir "$OVERLAYS"
+    printf '%s\n' "$body" > "$overlay"
+    ok "registered in $(shortp "$LIST")"
+    ok "settings written to $(shortp "$overlay")"
+  fi
+  wire_shared_profile_state "$name"
+
+  # --- what happens next ---
+  if [ "$login" = 1 ]; then
+    head1 "Launching '$name' to log in"
+    info "a browser will open; this account gets its own login, separate from the others"
+    [ "$DRY_RUN" = 1 ] && { run "exec claude-profile $name"; return 0; }
+    exec claude-profile "$name"
+  fi
+
+  head1 "Next"
+  say "  1. Reload your shell so the '$name' command exists:"
+  say ""
+  say "       exec zsh"
+  say ""
+  say "  2. Launch it and log in with the new account:"
+  say ""
+  say "       $name"
+  say ""
+  info "or skip the reload entirely: claude-account add $name --login"
+  info "commit when ready: git -C $(shortp "$REPO") add -A && git commit -m \"Add $name account\""
+}
+
+# ---------------------------------------------------------------- list
+
+cmd_list() {
+  head1 "Accounts"
+  printf '  %-10s %-32s %-24s %s\n' ACCOUNT "CONFIG DIR" "LOGGED IN AS" MODEL
+  printf '  %-10s %-32s %-24s %s\n' \
+    "$(printf '%.0s-' {1..7})" "$(printf '%.0s-' {1..10})" "$(printf '%.0s-' {1..12})" "-----"
+
+  local n dir who mdl
+  # Primary first, then everything in profiles.list, so the picture is complete.
+  for n in claude $(accounts); do
+    dir="$(config_dir_of "$n")"
+    who="$(logged_in_as "$n")"
+    mdl="$(model_of "$n")"
+    if [ ! -d "$dir" ]; then
+      who="(not yet launched)"
+    elif [ -z "$who" ]; then
+      who="(not logged in)"
+    fi
+    printf '  %-10s %-32s %-24s %s\n' "$n" "$(shortp "$dir")" "$who" "${mdl:-—}"
+  done
+
+  say ""
+  info "'claude' is the primary account; 'clauded' is the same account with permissions skipped"
+  info "add: claude-account add <name>    remove: claude-account remove <name>"
+}
+
+# ---------------------------------------------------------------- remove
+
+cmd_remove() {
+  local name="" purge=0
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --purge) purge=1; shift ;;
+      -*) fail "unknown flag: $1"; return 2 ;;
+      *)  [ -z "$name" ] || { fail "one account at a time"; return 2; }; name="$1"; shift ;;
+    esac
+  done
+  [ -n "$name" ] || { fail "usage: claude-account remove <name>"; return 2; }
+
+  head1 "Removing account '$name'"
+  is_account "$name" || { fail "'$name' is not a registered account"; info "see: claude-account list"; return 1; }
+
+  # --- unregister ---
+  if [ "$DRY_RUN" = 1 ]; then
+    run "remove '$name' from $(shortp "$LIST")"
+  else
+    local tmp; tmp="$(mktemp)"
+    grep -vxF "$name" "$LIST" > "$tmp" && mv "$tmp" "$LIST"
+    ok "unregistered — the '$name' command disappears on your next shell"
+  fi
+
+  local overlay; overlay="$(overlay_of "$name")"
+  [ -f "$overlay" ] && stash "$overlay" "profiles/$name.json"
+
+  # --- the data directory holds the login, sessions and history ---
+  local dir; dir="$(config_dir_of "$name")"
+  if [ ! -d "$dir" ]; then
+    info "no profile directory to deal with"
+  elif [ "$purge" = 1 ]; then
+    stash "$dir" "claude-profiles/$name"
+    ok "profile data archived (login, sessions and history — recoverable, not deleted)"
+  else
+    local sz; sz="$(du -sh "$dir" 2>/dev/null | cut -f1 || echo '?')"
+    info "left its data in place: $(shortp "$dir") ($sz)"
+    info "that holds the login, sessions and history — archive it with: claude-account remove $name --purge"
+  fi
+
+  say ""
+  info "commit when ready: git -C $(shortp "$REPO") add -A && git commit -m \"Remove $name account\""
+}
+
+# ---------------------------------------------------------------- main
+
+ARGS=()
+for a in "$@"; do
+  case "$a" in
+    --dry-run) DRY_RUN=1 ;;
+    *) ARGS+=("$a") ;;
+  esac
+done
+set -- ${ARGS+"${ARGS[@]}"}
+
+case "${1:-}" in
+  add)    shift; cmd_add "$@" ;;
+  list|ls) shift; cmd_list "$@" ;;
+  remove|rm) shift; cmd_remove "$@" ;;
+  -h|--help|help|"") usage 0 ;;
+  *) echo "unknown command: $1" >&2; usage 2 ;;
+esac

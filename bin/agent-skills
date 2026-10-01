@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Agent-neutral entrypoint. The implementation remains in claude-skills during the compatibility
+# window so existing external links keep working while both names expose identical behavior.
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$HERE/claude-skills" "$@"

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Agent-neutral entrypoint; claude-manager remains the implementation during compatibility.
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$HERE/claude-manager" "$@"

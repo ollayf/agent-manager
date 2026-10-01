@@ -1,0 +1,426 @@
+#!/usr/bin/env bash
+#
+# agent-skills implementation — manage shared authored and vendored skills.
+#
+#   sync            rebuild every vendored skill from vendor.json, normalise links, refresh .gitignore
+#   mirror [name…]  refresh mirror/ — the committed offline copy used when upstream is gone
+#   update [name…]  pull newer versions of vendored skills from upstream
+#   adopt <name>    convert a vendored skill into a repo-owned one (one-way)
+#   create <name>   create a repo-owned global or project skill
+#   status          what is tracked, vendored, dangling, or unknown
+#
+# Flags: --offline  skip the network; restore from mirror/ instead
+#        --prune    (mirror only) drop mirror dirs no longer in vendor.json
+#
+# The invariant this enforces:
+#   tracked in git = yours   |   ignored = a recipe in vendor.json can rebuild it
+#
+# Restore order when a skill is missing:
+#   repo/skills  ->  upstream fetch  ->  mirror/
+#
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../lib/common.sh
+source "$REPO/lib/common.sh"
+
+SKILLS="$REPO/skills"
+SKILLS_CLI=(npx -y skills@latest)
+
+OFFLINE=0
+PRUNE=0
+_args=()
+for a in "$@"; do
+  case "$a" in
+    --offline) OFFLINE=1 ;;
+    --prune)   PRUNE=1 ;;
+    *)         _args+=("$a") ;;
+  esac
+done
+set -- ${_args+"${_args[@]}"}
+
+usage() {
+  cat <<'EOF'
+agent-skills — manage shared authored and vendored skills
+
+  create <name> [--scope global|project] [--project <path>]
+  sync [name…] [--offline]
+  mirror [name…] [--prune]
+  update [name…]
+  adopt <name>
+  status
+
+Tracked directories in skills/ are yours. Names in vendor.json are ignored recipes that can
+be restored from upstream or mirror/.
+EOF
+  exit "${1:-0}"
+}
+
+# ---------------------------------------------------------------- helpers
+
+# The skills CLI writes relative links; rewrite any of them to absolute so the
+# directory stays correct no matter where it is reached from. This is the single
+# most important invariant here — see README, "the relative-symlink hazard".
+normalise_links() {
+  local l t abs n=0
+  for l in "$SKILLS"/*; do
+    [ -L "$l" ] || continue
+    t="$(readlink "$l")"
+    case "$t" in
+      /*) continue ;;                       # already absolute
+    esac
+    abs="$(link_target_abs "$l")"
+    run rm "$l"
+    run ln -s "$abs" "$l"
+    n=$((n+1))
+    info "absolutised $(basename "$l") -> $(shortp "$abs")"
+  done
+  [ "$n" = 0 ] && info "all vendored links already absolute"
+  return 0
+}
+
+# Restore a vendored skill from the committed mirror. Deliberately loud: a mirror restore
+# is NOT a fetch, and a run that quietly substituted a frozen copy for live upstream would
+# be the worst possible outcome — you would never learn the source had gone away.
+restore_from_mirror() {
+  local name="$1" dst
+  mirror_has "$name" || return 1
+  dst="$SKILLS/$name"
+
+  if [ "$DRY_RUN" = 1 ]; then run "restore $name from mirror -> $(shortp "$dst")"; return 0; fi
+
+  rm -rf "$dst"
+  ensure_dir "$(dirname "$dst")"
+  cp -R "$MIRROR_DIR/$name" "$dst"
+  warn "$name: RESTORED FROM MIRROR (captured $(mirror_captured_at "$name")) — not from upstream"
+  return 0
+}
+
+# ---------------------------------------------------------------- sync
+
+sync_one() {
+  local name="$1" type; type="$(vendor_field "$name" type)"
+  case "$type" in
+    skills-cli)
+      local src path skill
+      src="$(vendor_field "$name" source)"
+      path="$(vendor_field "$name" skillPath)"
+      skill="$(basename "$(dirname "$path")")"
+      [ "$skill" = "." ] && skill="$name"
+      if [ -d "$SKILLS/$name" ] && [ ! -L "$SKILLS/$name" ]; then
+        info "$name: present in shared registry"
+      elif [ "$OFFLINE" = 1 ]; then
+        restore_from_mirror "$name" || fail "$name: --offline and no mirror/$name to restore from"
+      else
+        info "fetching $name from $src"
+        # `|| true`: a failed fetch must fall through to the mirror, not kill the run under
+        # `set -e`. Upstream disappearing is precisely what the mirror exists for.
+        run "${SKILLS_CLI[@]}" add "$src" -g -s "$skill" -a claude-code codex -y || true
+        if [ -d "$SKILLS/$name" ]; then
+          ok "$name installed into the shared registry"
+        elif restore_from_mirror "$name"; then
+          :
+        elif [ "$DRY_RUN" != 1 ]; then
+          fail "$name: upstream fetch failed and there is no mirror/$name to fall back to"
+        fi
+      fi
+      ;;
+    git)
+      local url; url="$(vendor_field "$name" url)"
+      if [ -d "$SKILLS/$name/.git" ]; then
+        info "$name: clone present"
+      elif [ "$OFFLINE" = 1 ]; then
+        restore_from_mirror "$name" || fail "$name: --offline and no mirror/$name to restore from"
+      else
+        if [ -e "$SKILLS/$name" ]; then stash "$SKILLS/$name" "skills/$name"; fi
+        info "cloning $name from $url"
+        if run git clone --depth 1 -q "$url" "$SKILLS/$name"; then
+          ok "cloned $name"
+        else
+          warn "$name: clone from $url failed"
+          restore_from_mirror "$name" \
+            || fail "$name: clone failed and there is no mirror/$name to fall back to"
+        fi
+      fi
+      ;;
+    local)
+      local base file; base="$(expand_tilde "$(vendor_field "$name" path)")"
+      file="$(vendor_field "$name" skillFile)"
+      if [ ! -f "$base/$file" ]; then
+        warn "$name: $(shortp "$base/$file") is missing — clone $(vendor_field "$name" upstream)"
+        # The local checkout is outside this repo, so it can vanish independently. Fall back
+        # to the mirrored content rather than leaving a dangling link behind.
+        if [ -f "$MIRROR_DIR/$name/$file" ] && [ "$DRY_RUN" != 1 ]; then
+          ensure_dir "$SKILLS/$name"
+          rm -f "$SKILLS/$name/$file"
+          cp "$MIRROR_DIR/$name/$file" "$SKILLS/$name/$file"
+          warn "$name: RESTORED $file FROM MIRROR (captured $(mirror_captured_at "$name"))"
+        fi
+        return 0
+      fi
+      ensure_dir "$SKILLS/$name"
+      if [ -L "$SKILLS/$name/$file" ] && [ "$(readlink "$SKILLS/$name/$file")" = "$base/$file" ]; then
+        info "$name: already linked"
+      else
+        run rm -f "$SKILLS/$name/$file"
+        run ln -s "$base/$file" "$SKILLS/$name/$file"
+        ok "linked $name/$file -> $(shortp "$base/$file")"
+      fi
+      ;;
+    *) fail "$name: unknown vendor type '$type'" ;;
+  esac
+}
+
+# ---------------------------------------------------------------- create
+
+acquire_create_lock() {
+  local lock="$MANAGER_CONFIG_HOME/skill-create.lock"
+  ensure_dir "$MANAGER_CONFIG_HOME"
+  if [ "$DRY_RUN" = 1 ]; then
+    info "would acquire skill creation lock"
+    return 0
+  fi
+  if ! mkdir "$lock" 2>/dev/null; then
+    fail "another skill creation is in progress ($lock)"
+    return 1
+  fi
+  _CREATE_LOCK="$lock"
+}
+
+release_create_lock() {
+  [ -n "${_CREATE_LOCK:-}" ] && rmdir "$_CREATE_LOCK" 2>/dev/null || true
+}
+
+ensure_project_skill_roots() {
+  local project="$1" canonical="$1/.agents/skills" claude_root="$1/.claude/skills"
+  ensure_dir "$canonical"
+  ensure_dir "$project/.claude"
+  if [ -L "$claude_root" ] && [ "$(readlink "$claude_root")" = "../.agents/skills" ]; then
+    return 0
+  fi
+  if [ -e "$claude_root" ] || [ -L "$claude_root" ]; then
+    fail "project Claude skill root is not shared: $claude_root"
+    info "run: agent-manager project init $project"
+    return 1
+  fi
+  run ln -s "../.agents/skills" "$claude_root"
+}
+
+cmd_create() {
+  local name="" scope="global" project=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --scope) scope="${2:?--scope requires global or project}"; shift 2 ;;
+      --project) project="${2:?--project requires a path}"; shift 2 ;;
+      -*) fail "unknown flag: $1"; return 2 ;;
+      *) [ -z "$name" ] || { fail "create accepts one skill name"; return 2; }; name="$1"; shift ;;
+    esac
+  done
+  [ -n "$name" ] || { fail "usage: agent-skills create <name> [--scope global|project]"; return 2; }
+  printf '%s' "$name" | grep -qE '^[a-z][a-z0-9-]*$' || { fail "invalid skill name '$name'"; return 2; }
+  case "$scope" in global|project) ;; *) fail "--scope must be global or project"; return 2 ;; esac
+
+  local dst
+  if [ "$scope" = global ]; then
+    dst="$SKILLS/$name"
+  else
+    [ -n "$project" ] || project="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+    project="$(canonical_path "$project")"
+    [ -d "$project" ] || { fail "project does not exist: $project"; return 1; }
+    ensure_project_skill_roots "$project" || return 1
+    dst="$project/.agents/skills/$name"
+    if [ -e "$SKILLS/$name" ] || [ -L "$SKILLS/$name" ]; then
+      fail "'$name' already exists globally; project shadowing requires an explicit future allowlist entry"
+      return 1
+    fi
+  fi
+  [ ! -e "$dst" ] && [ ! -L "$dst" ] || { fail "skill already exists: $dst"; return 1; }
+
+  acquire_create_lock || return 1
+  trap release_create_lock EXIT INT TERM
+  if [ "$DRY_RUN" = 1 ]; then
+    run "create $dst/SKILL.md"
+  else
+    mkdir -p "$dst"
+    printf '%s\n' '---' "name: $name" "description: Describe when $name should and should not be used." '---' '' "# $name" '' 'Add skill instructions here.' > "$dst/SKILL.md"
+    ok "created $scope skill: $(shortp "$dst")"
+  fi
+  release_create_lock
+  trap - EXIT INT TERM
+}
+
+cmd_sync() {
+  head1 "Syncing vendored skills (vendor.json)"
+  local n
+  if [ "$#" -gt 0 ]; then
+    for n in "$@"; do
+      vendor_has "$n" || { fail "$n is not in vendor.json"; continue; }
+      sync_one "$n"
+    done
+  else
+    while read -r n; do sync_one "$n"; done < <(vendor_names)
+  fi
+  head1 "Normalising symlinks"
+  normalise_links
+  head1 "Refreshing skills/.gitignore"
+  write_skills_gitignore
+  ok "$(vendor_names | wc -l | tr -d ' ') vendored entries ignored; everything else in skills/ is yours"
+  failures
+}
+
+cmd_update() {
+  head1 "Updating vendored skills"
+  run "${SKILLS_CLI[@]}" update ${1:+"$@"} -g -y
+  normalise_links
+  ok "done — review with: git -C $(shortp "$REPO") status"
+}
+
+# ---------------------------------------------------------------- mirror
+
+# The upstream revision, where one is knowable. skills-cli entries already carry the folder
+# hash the CLI resolved; git clones can be asked directly. `local` has no meaningful rev.
+mirror_rev() {
+  local name="$1" type="$2" src
+  case "$type" in
+    skills-cli) vendor_field "$name" skillFolderHash ;;
+    git)
+      src="$(mirror_source_dir "$name" 2>/dev/null || true)"
+      if [ -n "$src" ] && [ -d "$src/.git" ]; then git -C "$src" rev-parse HEAD 2>/dev/null || true; fi
+      ;;
+    *) printf '' ;;
+  esac
+}
+
+cmd_mirror() {
+  head1 "Mirroring vendored skills -> $(shortp "$MIRROR_DIR")"
+  ensure_dir "$MIRROR_DIR"
+
+  local n type rev entry captured lock names=()
+  captured="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  if [ "$#" -gt 0 ]; then
+    for n in "$@"; do
+      if vendor_has "$n"; then names+=("$n"); else fail "$n is not in vendor.json"; fi
+    done
+  else
+    while read -r n; do names+=("$n"); done < <(vendor_names)
+  fi
+
+  # Start from the existing lock so mirroring a single skill does not discard the rest.
+  if [ -f "$MIRROR_LOCK" ] && jq -e . "$MIRROR_LOCK" >/dev/null 2>&1; then
+    lock="$(cat "$MIRROR_LOCK")"
+  else
+    lock='{"version":1,"comment":"","skills":{}}'
+  fi
+
+  for n in ${names+"${names[@]}"}; do
+    type="$(vendor_field "$n" type)"
+    if ! mirror_capture "$n"; then continue; fi
+    [ "$DRY_RUN" = 1 ] && continue
+
+    rev="$(mirror_rev "$n" "$type")"
+    entry="$(jq -n \
+      --arg type "$type" \
+      --arg source "$(vendor_field "$n" source)" \
+      --arg url "$(vendor_field "$n" url)" \
+      --arg path "$(vendor_field "$n" path)" \
+      --arg rev "$rev" \
+      --arg capturedAt "$captured" \
+      --argjson files "$(mirror_stat_files "$n")" \
+      --argjson kb "$(mirror_stat_bytes "$n")" \
+      --argjson excluded "$(vendor_excludes "$n" | jq -R . | jq -s .)" \
+      '{type: $type, capturedAt: $capturedAt, files: $files, kb: $kb}
+       | if $source   != "" then .source   = $source else . end
+       | if $url      != "" then .url      = $url    else . end
+       | if $path     != "" then .path     = $path   else . end
+       | if $rev      != "" then .rev      = $rev    else . end
+       | if ($excluded | length) > 0 then .excluded = $excluded else . end')"
+    lock="$(printf '%s' "$lock" | jq --arg n "$n" --argjson e "$entry" '.skills[$n] = $e')"
+    ok "$n  ($(mirror_stat_files "$n") files, $(mirror_stat_bytes "$n") KB)"
+  done
+
+  # Entries for skills that are no longer vendored are stale by definition.
+  if [ "$PRUNE" = 1 ] && [ "$DRY_RUN" != 1 ]; then
+    local d b
+    for d in "$MIRROR_DIR"/*/; do
+      [ -d "$d" ] || continue
+      b="$(basename "$d")"
+      if ! vendor_has "$b"; then
+        rm -rf "$d"
+        lock="$(printf '%s' "$lock" | jq --arg n "$b" 'del(.skills[$n])')"
+        info "pruned mirror/$b (no longer in vendor.json)"
+      fi
+    done
+  fi
+
+  if [ "$DRY_RUN" != 1 ]; then
+    printf '%s' "$lock" | jq --arg c "Frozen copies of every vendored skill, read only when upstream cannot be reached. Refresh with: agent-skills mirror. Restore with: agent-skills sync --offline. A diff here means upstream changed since capture — skills/ is the live path, never this." \
+      '.version = 1 | .comment = $c' > "$MIRROR_LOCK"
+    head1 "Summary"
+    say "  mirrored: $(jq -r '.skills | keys | length' "$MIRROR_LOCK") of $(vendor_names | wc -l | tr -d ' ') vendored skills"
+    say "  size:     $(du -sh "$MIRROR_DIR" | cut -f1 | tr -d ' ')"
+  fi
+  failures
+}
+
+# ---------------------------------------------------------------- adopt
+
+cmd_adopt() {
+  local name="${1:?usage: agent-skills adopt <name>}"
+  vendor_has "$name" || { fail "$name is not vendored — it is already repo-owned"; return 1; }
+  local cur="$SKILLS/$name" real
+  [ -e "$cur" ] || { fail "$name is not present in skills/"; return 1; }
+
+  head1 "Adopting $name"
+  if [ -L "$cur" ]; then
+    real="$(link_target_abs "$cur")"
+    run rm "$cur"
+    run cp -R "$real" "$cur"
+    info "copied real files from $(shortp "$real")"
+  fi
+  run rm -rf "$cur/.git"          # a vendored clone must not become a submodule
+  local tmp; tmp="$(mktemp)"
+  jq --arg n "$name" 'del(.skills[$n])' "$REPO/vendor.json" > "$tmp"
+  if [ "$DRY_RUN" = 1 ]; then rm -f "$tmp"; else mv "$tmp" "$REPO/vendor.json"; vendor_cache_drop; fi
+  write_skills_gitignore
+  ok "$name is now repo-owned — commit it, and sync will never touch it again"
+}
+
+# ---------------------------------------------------------------- status
+
+cmd_status() {
+  head1 "skills/ — $(shortp "$SKILLS")"
+  local e name dangling=0 owned=0 vend=0
+  for e in "$SKILLS"/*; do
+    [ -e "$e" ] || [ -L "$e" ] || continue
+    name="$(basename "$e")"
+    if [ -L "$e" ] && [ ! -e "$e" ]; then
+      fail "$name — DANGLING -> $(readlink "$e")"; dangling=$((dangling+1)); continue
+    fi
+    if vendor_has "$name"; then
+      vend=$((vend+1))
+      printf '  %svendored%s %-32s %s\n' "$C_DIM" "$C_OFF" "$name" "$(vendor_field "$name" type)"
+    else
+      owned=$((owned+1))
+      printf '  %sYOURS%s    %-32s tracked\n' "$C_GRN" "$C_OFF" "$name"
+    fi
+  done
+  head1 "Summary"
+  say "  yours (tracked):   $owned"
+  say "  vendored (ignored): $vend"
+  [ "$dangling" -gt 0 ] && say "  ${C_RED}dangling: $dangling — run: agent-skills sync${C_OFF}"
+  failures
+}
+
+# ---------------------------------------------------------------- main
+
+case "${1:-}" in
+  create) shift; cmd_create "$@" ;;
+  sync)   shift; cmd_sync "$@" ;;
+  mirror) shift; cmd_mirror "$@" ;;
+  update) shift; cmd_update "$@" ;;
+  adopt)  shift; cmd_adopt "$@" ;;
+  status) shift; cmd_status "$@" ;;
+  -h|--help|help|"") usage 0 ;;
+  *) echo "unknown command: $1" >&2; usage 2 ;;
+esac

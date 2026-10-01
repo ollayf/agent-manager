@@ -1,0 +1,7 @@
+{
+  "theme": "dark",
+  "model": "opus",
+  "tui": "fullscreen",
+  "skipDangerousModePermissionPrompt": true,
+  "skipAutoPermissionPrompt": true
+}

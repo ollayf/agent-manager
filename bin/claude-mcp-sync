@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+"""claude-mcp-sync — share MCP OAuth tokens across all Claude Code accounts.
+
+Each Claude Code account (primary `claude`, `claude2`, future `claude3`, ...) stores its
+credentials in its OWN macOS Keychain slot named `Claude Code-credentials[-<suffix>]`. That
+blob holds two things: `claudeAiOauth` (the account's own login — must stay distinct per
+account) and `mcpOAuth` (browser-OAuth tokens for MCP servers like higgsfield — which we WANT
+identical everywhere).
+
+This script reconciles only the `mcpOAuth` half: it reads every `Claude Code-credentials*`
+slot, picks the freshest token per MCP server, and writes that set back into every slot,
+leaving each slot's `claudeAiOauth` untouched. Run it at launch of any account so a `/mcp`
+reconnect done in one account propagates to all the others.
+
+Safety / scope:
+- Touches ONLY Keychain items whose service name starts with "Claude Code-credentials".
+  It never enumerates or reads any other item's secret.
+- Writes a slot back only when its mcpOAuth actually changes (usual case = zero writes).
+- Never blocks a launch: on any error it exits 0.
+- Prints server-key names and expiry timestamps only — never token values.
+
+Flags:
+  --dry-run    show what it would pick and change, write nothing
+  --verbose    print a summary even when nothing changes
+"""
+import json
+import re
+import subprocess
+import sys
+
+SERVICE_PREFIX = "Claude Code-credentials"
+
+
+def _run(args):
+    return subprocess.run(args, capture_output=True, text=True)
+
+
+def discover_services():
+    """Return sorted list of generic-password service names starting with SERVICE_PREFIX.
+
+    Uses `security dump-keychain` which exposes only item METADATA (service names), never
+    secret values, and does not trigger an access prompt.
+    """
+    p = _run(["security", "dump-keychain"])
+    svcs = set()
+    for line in p.stdout.splitlines():
+        m = re.search(r'"svce"<blob>="(' + re.escape(SERVICE_PREFIX) + r'[^"]*)"', line)
+        if m:
+            svcs.add(m.group(1))
+    return sorted(svcs)
+
+
+def get_account(svc):
+    """Read the `acct` attribute for a service (metadata only, no secret, no prompt)."""
+    p = _run(["security", "find-generic-password", "-s", svc])
+    m = re.search(r'"acct"<blob>="([^"]*)"', p.stdout)
+    return m.group(1) if m else None
+
+
+def read_blob(svc, acct):
+    """Read + parse the JSON credentials blob for a slot. Returns dict or None."""
+    args = ["security", "find-generic-password", "-s", svc]
+    if acct:
+        args += ["-a", acct]
+    args += ["-w"]
+    p = _run(args)
+    if p.returncode != 0:
+        return None
+    try:
+        return json.loads(p.stdout.strip())
+    except (ValueError, json.JSONDecodeError):
+        return None
+
+
+def write_blob(svc, acct, blob):
+    """Update a slot's password to the given blob (preserving other item attributes)."""
+    data = json.dumps(blob, separators=(",", ":"))
+    args = ["security", "add-generic-password", "-U", "-s", svc]
+    if acct:
+        args += ["-a", acct]
+    args += ["-w", data]
+    return _run(args).returncode == 0
+
+
+def freshness(entry):
+    """Rank an mcpOAuth entry so the best (most refreshable / latest-expiring) wins.
+
+    Order of preference:
+      1. has a numeric `expiresAt` (a real, refreshable grant beats a stale one without it)
+      2. larger `expiresAt` (later expiry)
+      3. has a `refreshToken`
+    """
+    if not isinstance(entry, dict):
+        return (-1, -1, -1)
+    exp = entry.get("expiresAt")
+    has_exp = isinstance(exp, (int, float))
+    has_refresh = bool(entry.get("refreshToken"))
+    return (1 if has_exp else 0, exp if has_exp else 0, 1 if has_refresh else 0)
+
+
+def main():
+    argv = sys.argv[1:]
+    dry_run = "--dry-run" in argv
+    verbose = "--verbose" in argv or dry_run
+
+    services = discover_services()
+    if not services:
+        return 0
+
+    # Gather every slot's blob + its current mcpOAuth.
+    slots = {}  # svc -> {"acct":..., "blob":...}
+    for svc in services:
+        acct = get_account(svc)
+        blob = read_blob(svc, acct)
+        if blob is None:
+            continue
+        slots[svc] = {"acct": acct, "blob": blob}
+
+    if not slots:
+        return 0
+
+    # Reconcile: freshest entry per MCP server key across all slots.
+    best = {}  # serverKey -> best entry seen anywhere
+    for info in slots.values():
+        for key, entry in (info["blob"].get("mcpOAuth") or {}).items():
+            if key not in best or freshness(entry) > freshness(best[key]):
+                best[key] = entry
+
+    if verbose:
+        print("[claude-mcp-sync] slots:", ", ".join(slots), file=sys.stderr)
+        for key, entry in best.items():
+            exp = entry.get("expiresAt") if isinstance(entry, dict) else None
+            print(f"[claude-mcp-sync] winner {key} expiresAt={exp}", file=sys.stderr)
+
+    # For each slot, adopt an entry ONLY when the global best is strictly fresher than the
+    # slot's own (or the slot lacks it). Ties keep the slot's own token, so we never clobber a
+    # working token with an equally-ranked one from elsewhere. claudeAiOauth is left untouched.
+    changed = []
+    for svc, info in slots.items():
+        current = info["blob"].get("mcpOAuth") or {}
+        new_mcp = dict(current)
+        for key, entry in best.items():
+            if freshness(entry) > freshness(current.get(key)):
+                new_mcp[key] = entry
+        if new_mcp == current:
+            continue
+        changed.append(svc)
+        if dry_run:
+            continue
+        info["blob"]["mcpOAuth"] = new_mcp
+        if not write_blob(svc, info["acct"], info["blob"]):
+            print(f"[claude-mcp-sync] WARN: write failed for {svc}", file=sys.stderr)
+
+    if verbose or changed:
+        verb = "would update" if dry_run else "updated"
+        if changed:
+            print(f"[claude-mcp-sync] {verb}: {', '.join(changed)}", file=sys.stderr)
+        elif verbose:
+            print("[claude-mcp-sync] all slots already in sync", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception as e:  # never block a launch
+        print(f"[claude-mcp-sync] skipped ({e})", file=sys.stderr)
+        sys.exit(0)

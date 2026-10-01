@@ -1,0 +1,6 @@
+{
+  "_comment": "Applied by use-claude (shell/claude.zsh). Mode-SPECIFIC settings only. The always-on plugin baseline lives in config/plugins.json and is applied by `claude-plugins sync`; listing a plugin here too would make the two fight on every mode switch — that is how superpowers kept reinstalling itself after being uninstalled. Anthropic mode needs no plugins of its own, so both maps are empty: they exist purely so the merge in claude.zsh can drop the GLM-mode plugins when switching back.",
+  "env": {},
+  "enabledPlugins": {},
+  "extraKnownMarketplaces": {}
+}

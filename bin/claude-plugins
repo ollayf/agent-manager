@@ -1,0 +1,242 @@
+#!/usr/bin/env bash
+#
+# claude-plugins — manage the plugins the repo does NOT own.
+#
+#   sync      install every marketplace + plugin in config/plugins.json, then set the flags
+#   capture   adopt the live plugin state back into config/plugins.json
+#   status    what is in the manifest, what is live, and where they disagree
+#
+# Same bargain as vendor.json: record a RECIPE, never vendor the code. Plugin bodies live
+# in ~/.claude/plugins/cache and are refetched, not committed.
+#
+# Who owns `enabledPlugins`:
+#   config/plugins.json      the always-on baseline  (survives a mode switch)
+#   config/mode-configs/*    mode-specific plugins   (swapped by use-claude / use-glm)
+#
+# A plugin named by any mode-config is mode-owned and is deliberately kept OUT of the
+# baseline — otherwise the two would fight, which is exactly how superpowers kept coming
+# back from the dead after being uninstalled.
+#
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../lib/common.sh
+source "$REPO/lib/common.sh"
+
+MANIFEST="$REPO/config/plugins.json"
+LIVE_PLUGINS="$CLAUDE_DIR/plugins/installed_plugins.json"
+LIVE_MARKETS="$CLAUDE_DIR/plugins/known_marketplaces.json"
+SETTINGS="$CLAUDE_DIR/settings.json"
+
+usage() { sed -n '3,20p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+
+[ -f "$MANIFEST" ] || { echo "missing $MANIFEST" >&2; exit 1; }
+
+# ---------------------------------------------------------------- helpers
+
+mf() { jq -r "$1" "$MANIFEST"; }
+
+market_names()   { mf '.marketplaces | keys[]'; }
+market_field()   { jq -r --arg n "$1" --arg f "$2" '.marketplaces[$n][$f] // ""' "$MANIFEST"; }
+plugin_keys()    { mf '.plugins[] | "\(.name)@\(.marketplace)"'; }
+plugin_field()   { jq -r --arg k "$1" --arg f "$2" '.plugins[] | select("\(.name)@\(.marketplace)" == $k) | .[$f] // ""' "$MANIFEST"; }
+
+# Plugin keys claimed by a mode-config. These belong to use-claude / use-glm, never to the
+# baseline. Templates are read too: the rendered glm.json / glm-2.json hold live tokens and
+# are deliberately outside the repo.
+mode_owned_keys() {
+  jq -r '.enabledPlugins // {} | keys[]' \
+    "$REPO"/config/mode-configs/*.json "$REPO"/config/mode-configs/*.template.json 2>/dev/null \
+    | sort -u
+}
+
+market_known() { [ -f "$LIVE_MARKETS" ] && jq -e --arg n "$1" 'has($n)' "$LIVE_MARKETS" >/dev/null 2>&1; }
+
+# Installed AT THE REQUESTED SCOPE — not merely present. One key can hold several entries
+# (a user install and a project install of the same plugin), and `claude plugin uninstall`
+# removes only one of them. A key-presence test would call a plugin installed when just a
+# stray project-scope entry survives, and sync would never restore the user-scope install
+# the manifest actually asks for.
+plugin_installed() {
+  local key="$1" scope="${2:-user}"
+  [ -f "$LIVE_PLUGINS" ] || return 1
+  jq -e --arg k "$key" --arg s "$scope" \
+    '(.plugins[$k] // []) | map(select(.scope == $s)) | length > 0' \
+    "$LIVE_PLUGINS" >/dev/null 2>&1
+}
+
+# ---------------------------------------------------------------- sync
+
+sync_marketplaces() {
+  local n src path
+  while read -r n; do
+    [ -z "$n" ] && continue
+    if market_known "$n"; then info "$n: already known"; continue; fi
+    case "$(market_field "$n" source)" in
+      github)
+        src="$(market_field "$n" repo)"
+        ;;
+      directory)
+        path="$(expand_tilde "$(market_field "$n" path)")"
+        if [ ! -d "$path" ]; then
+          # bestEffort sources (an npx cache path, a sibling checkout) legitimately do not
+          # exist on a fresh machine. Warn and carry on — never fail the whole install.
+          if [ "$(market_field "$n" bestEffort)" = "true" ]; then
+            warn "$n: $(shortp "$path") not present — skipping (best-effort source)"
+            info "     $(market_field "$n" note)"
+            continue
+          fi
+          fail "$n: $(shortp "$path") not present"
+          continue
+        fi
+        src="$path"
+        ;;
+      *) fail "$n: unknown marketplace source '$(market_field "$n" source)'"; continue ;;
+    esac
+    info "adding marketplace $n from $src"
+    if run claude plugin marketplace add "$src"; then ok "marketplace $n added"; else fail "$n: marketplace add failed"; fi
+  done < <(market_names)
+}
+
+sync_plugins() {
+  local k scope
+  while read -r k; do
+    [ -z "$k" ] && continue
+    scope="$(plugin_field "$k" scope)"; [ -z "$scope" ] && scope="user"
+    if plugin_installed "$k" "$scope"; then info "$k: installed ($scope)"; continue; fi
+    info "installing $k (scope=$scope)"
+    # -y: required whenever stdin/stdout is not a TTY, which is the case under install.sh.
+    if run claude plugin install "$k" -s "$scope" -y; then ok "$k installed"; else fail "$k: install failed"; fi
+  done < <(plugin_keys)
+}
+
+# Merge the baseline's enabled set into settings.json. Additive only: a plugin enabled live
+# but absent from the manifest is left alone — `capture` is how those get adopted, and
+# silently disabling them would be the same trap this tool exists to remove.
+sync_enablement() {
+  local want tmp
+  want="$(mf '[.plugins[] | select(.enabled) | "\(.name)@\(.marketplace)"] | map({key:., value:true}) | from_entries')"
+  [ -f "$SETTINGS" ] || { warn "no $(shortp "$SETTINGS") yet — skipping enablement"; return 0; }
+
+  if jq -e --argjson w "$want" '(.enabledPlugins // {}) * $w == (.enabledPlugins // {})' "$SETTINGS" >/dev/null 2>&1; then
+    info "enabledPlugins already covers the baseline"
+    return 0
+  fi
+  if [ "$DRY_RUN" = 1 ]; then
+    run "merge $(jq -r 'keys | length' <<<"$want") baseline flags into $(shortp "$SETTINGS")"
+    return 0
+  fi
+  tmp="$(mktemp)"
+  if jq --argjson w "$want" '.enabledPlugins = ((.enabledPlugins // {}) * $w)' "$SETTINGS" > "$tmp" && [ -s "$tmp" ]; then
+    mv "$tmp" "$SETTINGS"
+    ok "enabledPlugins updated ($(jq -r 'keys | length' <<<"$want") baseline plugins)"
+  else
+    rm -f "$tmp"
+    fail "could not update $(shortp "$SETTINGS")"
+  fi
+}
+
+cmd_sync() {
+  head1 "Marketplaces (config/plugins.json)"
+  sync_marketplaces
+  head1 "Plugins"
+  sync_plugins
+  head1 "Enablement"
+  sync_enablement
+  failures
+}
+
+# ---------------------------------------------------------------- capture
+
+# Rewrite the manifest from live state, so a plugin added through /plugin lands in git.
+# Marketplace entries already in the manifest are preserved verbatim — they carry `note`
+# and `bestEffort` metadata that the live registry does not have.
+cmd_capture() {
+  head1 "Capturing live plugin state"
+  [ -f "$LIVE_PLUGINS" ] || { warn "no $(shortp "$LIVE_PLUGINS") — nothing to capture"; return 0; }
+
+  local excluded live_plugins live_markets new tmp
+  excluded="$(mode_owned_keys | jq -R . | jq -s .)"
+
+  # user-scope installs only: a project-scope entry belongs to that project, not the machine.
+  live_plugins="$(jq --argjson ex "$excluded" '
+      [ .plugins | to_entries[]
+        | select(.value | map(.scope == "user") | any)
+        | select(.key | IN($ex[]) | not)
+        | .key
+        | { name: (split("@")[0]), marketplace: (split("@")[1]), scope: "user" } ]
+      | sort_by(.name)' "$LIVE_PLUGINS")"
+
+  # Fold in enablement from the live settings.
+  if [ -f "$SETTINGS" ]; then
+    live_plugins="$(jq --argjson p "$live_plugins" '
+        (.enabledPlugins // {}) as $e
+        | $p | map(. + { enabled: (($e["\(.name)@\(.marketplace)"]) == true) })' "$SETTINGS")"
+  else
+    live_plugins="$(jq 'map(. + {enabled: true})' <<<"$live_plugins")"
+  fi
+
+  live_markets="$(jq '[ to_entries[] | { key: .key, value: (
+        if .value.source.source == "directory"
+        then { source: "directory", path: .value.source.path }
+        else { source: "github", repo: .value.source.repo }
+        end) } ] | from_entries' "$LIVE_MARKETS" 2>/dev/null || echo '{}')"
+
+  # Manifest entries win on collision (they hold note/bestEffort); live adds the unknown ones.
+  new="$(jq --argjson p "$live_plugins" --argjson m "$live_markets" '
+      .plugins = $p | .marketplaces = ($m * .marketplaces)' "$MANIFEST")"
+
+  if [ "$(jq -S . <<<"$new")" = "$(jq -S . "$MANIFEST")" ]; then
+    ok "config/plugins.json already matches live state"
+    return 0
+  fi
+  if [ "$DRY_RUN" = 1 ]; then run "rewrite config/plugins.json from live state"; return 0; fi
+  # mktemp is 600; the manifest is tracked config, not a secret, so restore 644.
+  tmp="$(mktemp)"; printf '%s\n' "$new" > "$tmp"; mv "$tmp" "$MANIFEST"; chmod 644 "$MANIFEST"
+  ok "config/plugins.json updated — review with: git -C $(shortp "$REPO") diff -- config/plugins.json"
+  mode_owned_keys | while read -r k; do [ -n "$k" ] && info "left to mode-configs: $k"; done
+}
+
+# ---------------------------------------------------------------- status
+
+cmd_status() {
+  head1 "Baseline (config/plugins.json)"
+  local k scope
+  while read -r k; do
+    [ -z "$k" ] && continue
+    scope="$(plugin_field "$k" scope)"; [ -z "$scope" ] && scope="user"
+    if plugin_installed "$k" "$scope"; then
+      printf '  %sok%s   %-42s installed (%s)\n' "$C_GRN" "$C_OFF" "$k" "$scope"
+    else
+      printf '  %swarn%s %-42s MISSING — run: claude-plugins sync\n' "$C_YEL" "$C_OFF" "$k"
+    fi
+  done < <(plugin_keys)
+
+  head1 "Mode-owned (config/mode-configs/)"
+  mode_owned_keys | while read -r k; do [ -n "$k" ] && info "$k"; done
+
+  head1 "Live but unrecorded"
+  local unrecorded
+  unrecorded="$(jq -r --argjson mf "$(mf '[.plugins[] | "\(.name)@\(.marketplace)"]')" \
+      --argjson ex "$(mode_owned_keys | jq -R . | jq -s .)" '
+      .plugins | keys[] | select(IN($mf[]) | not) | select(IN($ex[]) | not)' \
+      "$LIVE_PLUGINS" 2>/dev/null || true)"
+  if [ -z "$unrecorded" ]; then
+    ok "none — the manifest covers everything installed"
+  else
+    printf '%s\n' "$unrecorded" | while read -r k; do
+      printf '  %swarn%s %-42s not in the repo — run: claude-plugins capture\n' "$C_YEL" "$C_OFF" "$k"
+    done
+  fi
+  failures
+}
+
+# ---------------------------------------------------------------- main
+
+case "${1:-}" in
+  sync)    shift; cmd_sync "$@" ;;
+  capture) shift; cmd_capture "$@" ;;
+  status)  shift; cmd_status "$@" ;;
+  -h|--help|help|"") usage 0 ;;
+  *) echo "unknown command: $1" >&2; usage 2 ;;
+esac

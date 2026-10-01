@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "comment": "Portable MCP definitions. Add secret environment-variable names, never secret values. Empty by default; live credentials and OAuth sessions stay machine-local.",
+  "servers": {}
+}

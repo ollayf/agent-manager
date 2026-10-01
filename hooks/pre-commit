@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+#
+# Credential guard. A pushed token is unrecoverable — you must rotate it — so this
+# refuses the commit rather than trusting .gitignore alone.
+#
+# The patterns live in lib/credscan.sh, shared with `claude-manager push`. If that file
+# cannot be loaded this hook refuses the commit rather than running unguarded: a guard
+# that fails open is worse than no guard, because you stop checking by hand.
+#
+# Bypass (only when you are certain): git commit --no-verify
+#
+set -uo pipefail
+
+REPO="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$REPO" ] || [ ! -r "$REPO/lib/credscan.sh" ]; then
+  printf '\033[31mpre-commit: cannot load lib/credscan.sh — refusing to commit unguarded\033[0m\n' >&2
+  exit 1
+fi
+# shellcheck source=../lib/credscan.sh
+. "$REPO/lib/credscan.sh"
+
+hits=0
+
+# credscan reports to stderr; capture it so the banner still prints above the detail.
+added="$(git diff --cached --diff-filter=ACM -U0 | grep '^+' | grep -v '^+++' || true)"
+if [ -n "$added" ]; then
+  if ! report="$(printf '%s\n' "$added" | credscan 2>&1)"; then
+    printf '\033[31mpre-commit: refusing — staged changes look like they contain a credential\033[0m\n' >&2
+    printf '%s\n' "$report" >&2
+    hits=$((hits+1))
+  fi
+fi
+
+# Never let the rendered, token-bearing configs in either.
+if ! report="$(git diff --cached --name-only | credscan_paths 2>&1)"; then
+  printf '\033[31mpre-commit: refusing — secrets.env / glm*.json must never be committed\033[0m\n' >&2
+  printf '%s\n' "$report" >&2
+  hits=$((hits+1))
+fi
+
+if [ "$hits" -gt 0 ]; then
+  printf '\nUnstage the offending file, move the value into secrets.env, and use a ${VAR} placeholder.\n' >&2
+  exit 1
+fi
+exit 0

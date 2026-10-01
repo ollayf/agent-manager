@@ -1,0 +1,350 @@
+#!/usr/bin/env bash
+#
+# agent-manager implementation — install, reconcile and validate all supported agents.
+#
+#   install bootstrap or reconcile Claude Code, Codex, profiles, skills and settings
+#   doctor  verify the current machine without changing it
+#   pull    gather live state into the repo: repair shared instruction links, sync vendored
+#           skills, refresh the offline mirror, report profile drift
+#   push    run every check that should pass before a commit, then print the git
+#           commands for YOU to run
+#   root status|switch <checkout>   inspect or change the one active clone
+#   project init [path]             initialise shared project instructions and skill roots
+#
+# Flags: --dry-run   print every action, change nothing
+#
+# Neither command touches git history. `push` deliberately stops before `git add` — see
+# config/shared/instructions.md: committing and pushing are the user's, never an agent's.
+# That is also
+# what makes `push` safe for an agent to run on your behalf.
+#
+set -uo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../lib/common.sh
+source "$REPO/lib/common.sh"
+# shellcheck source=../lib/credscan.sh
+source "$REPO/lib/credscan.sh"
+
+usage() { sed -n '3,15p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+
+_args=()
+for a in "$@"; do
+  case "$a" in
+    --dry-run) DRY_RUN=1 ;;
+    *)         _args+=("$a") ;;
+  esac
+done
+set -- ${_args+"${_args[@]}"}
+
+REPO_INSTRUCTIONS="$REPO/config/shared/instructions.md"
+
+# ---------------------------------------------------------------- CLAUDE.md
+#
+# The global CLAUDE.md reaches the repo only through a symlink. Anything that saves by
+# atomic rename — some editors, some tooling — replaces the link with a real file, and
+# from then on your edits land outside the repo where `git status` will never show them.
+# Adopt whatever is live, then put the link back.
+
+instructions_pull() {
+  local expected="$MANAGER_CURRENT/config/shared/instructions.md"
+  local live candidate="" candidate_path="" p
+  local paths=("$CLAUDE_DIR/CLAUDE.md" "$CODEX_DIR/AGENTS.md")
+  while read -r p; do paths+=("$CLAUDE_PROFILES_HOME/$p/CLAUDE.md"); done < <(profile_names)
+
+  for live in "${paths[@]}"; do
+    [ -e "$live" ] || [ -L "$live" ] || continue
+    if [ -L "$live" ]; then
+      [ "$(readlink "$live")" = "$expected" ] || warn "$(shortp "$live") points outside agent-manager"
+      continue
+    fi
+    cmp -s "$live" "$REPO_INSTRUCTIONS" && continue
+    if [ -z "$candidate" ]; then
+      candidate="$live"; candidate_path="$live"
+    elif ! cmp -s "$candidate" "$live"; then
+      fail "conflicting detached instruction files: $(shortp "$candidate_path") and $(shortp "$live")"
+      return 1
+    fi
+  done
+
+  if [ -n "$candidate" ]; then
+    warn "adopting detached shared instructions from $(shortp "$candidate_path")"
+    if [ "$DRY_RUN" = 1 ]; then run "copy $(shortp "$candidate") -> config/shared/instructions.md"
+    else cp "$candidate" "$REPO_INSTRUCTIONS"; fi
+  fi
+  for live in "${paths[@]}"; do
+    ensure_dir "$(dirname "$live")"
+    link_managed "$expected" "$live" "instructions/$(basename "$(dirname "$live")")-$(basename "$live")"
+  done
+}
+
+# ---------------------------------------------------------------- profiles
+#
+# Report only, never write back. claude-profile applies config/profiles/<n>.json ONTO the
+# live settings on every launch, so the repo is already the source of truth; pulling in the
+# other direction would fight it. The live file also carries mirrored plugin state that is
+# none of the overlay's business.
+
+profiles_report() {
+  local n live overlay diff_keys
+  [ -f "$REPO/config/profiles.list" ] || { warn "no config/profiles.list"; return 0; }
+  while read -r n; do
+    [ -z "$n" ] && continue
+    case "$n" in \#*) continue ;; esac
+    live="$HOME/.claude-profiles/$n/settings.json"
+    overlay="$REPO/config/profiles/$n.json"
+    if [ ! -f "$overlay" ]; then warn "$n: no overlay in config/profiles/"; continue; fi
+    if [ ! -f "$live" ]; then info "$n: not launched yet (no live settings.json)"; continue; fi
+    diff_keys="$(jq -rn --slurpfile l "$live" --slurpfile o "$overlay" '
+        [ $o[0] | to_entries[] | select(.value != ($l[0][.key])) | .key ] | join(", ")
+      ' 2>/dev/null || true)"
+    if [ -n "$diff_keys" ]; then
+      warn "$n: live settings differ from the overlay on: $diff_keys"
+      info "     the overlay wins on next launch — edit config/profiles/$n.json to keep a change"
+    else
+      ok "$n: live settings match the overlay"
+    fi
+  done < "$REPO/config/profiles.list"
+}
+
+# ---------------------------------------------------------------- pull
+
+cmd_pull() {
+  head1 "Shared instructions"
+  instructions_pull
+
+  head1 "Vendored skills"
+  "$REPO/bin/agent-skills" sync || fail "agent-skills sync reported problems"
+
+  head1 "Offline mirror"
+  "$REPO/bin/agent-skills" mirror || fail "agent-skills mirror reported problems"
+
+  head1 "Plugins"
+  # capture, not sync: pull adopts live state into the repo. Installing here would be the
+  # wrong direction — that is install.sh's job.
+  "$REPO/bin/claude-plugins" capture || fail "claude-plugins capture reported problems"
+
+  head1 "Account overlays"
+  profiles_report
+
+  head1 "Working tree"
+  if [ -d "$REPO/.git" ]; then
+    local n
+    n="$(git -C "$REPO" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+    if [ "$n" = 0 ]; then
+      ok "nothing changed"
+    else
+      say ""
+      git -C "$REPO" status --short
+      say ""
+      say "  $n path(s) changed. Review, then: agent-manager push"
+    fi
+  else
+    warn "not a git repo"
+  fi
+  failures
+}
+
+# ---------------------------------------------------------------- push
+
+cmd_push() {
+  head1 "doctor"
+  if "$REPO/doctor.sh" >/dev/null 2>&1; then
+    ok "doctor: healthy"
+  else
+    fail "doctor reported problems — run ./doctor.sh to see them"
+  fi
+
+  head1 "Credentials"
+  # The working tree, not just the staged diff: this runs BEFORE you stage anything, so
+  # the staged diff is exactly the thing that does not exist yet.
+  local files report
+  files="$(cd "$REPO" && git ls-files --cached --others --exclude-standard 2>/dev/null || true)"
+  if [ -z "$files" ]; then
+    files="$(cd "$REPO" && find . -type f -not -path './.git/*' -not -path './skills/*' -not -path './mirror/*' | sed 's|^\./||')"
+  fi
+  if ! report="$(printf '%s\n' "$files" | credscan_paths 2>&1)"; then
+    fail "a rendered secret file is present and would be committed:"
+    printf '%s\n' "$report" >&2
+  else
+    ok "no rendered secret file in the tree"
+  fi
+
+  local scan_target
+  scan_target="$(printf '%s\n' "$files" | grep -vE "$CREDSCAN_SECRET_FILES" || true)"
+  if [ -n "$scan_target" ]; then
+    if ! report="$( cd "$REPO" && printf '%s\n' "$scan_target" | credscan_files 2>&1 )"; then
+      fail "token-shaped strings found in the working tree:"
+      printf '%s\n' "$report" >&2
+    else
+      ok "no token-shaped strings ($(printf '%s\n' "$scan_target" | wc -l | tr -d ' ') files scanned)"
+    fi
+  fi
+
+  head1 "Repo invariants"
+  if [ -d "$REPO/.git" ]; then
+    local bad
+    bad="$(git -C "$REPO" ls-files -s 2>/dev/null | awk '$1==120000 {print $4}')"
+    if [ -n "$bad" ]; then
+      fail "symlinks are tracked (they break on another machine):"
+      printf '        %s\n' $bad
+    else
+      ok "no symlink is tracked"
+    fi
+  fi
+
+  local missing=0 n
+  while read -r n; do
+    [ -z "$n" ] && continue
+    mirror_has "$n" || { fail "mirror/$n missing — run: agent-skills mirror"; missing=$((missing+1)); }
+  done < <(vendor_names)
+  [ "$missing" = 0 ] && ok "mirror covers all $(vendor_names | wc -l | tr -d ' ') vendored skills"
+
+  if [ -f "$MIRROR_LOCK" ]; then
+    local locked vendored
+    locked="$(jq -r '.skills | keys | length' "$MIRROR_LOCK" 2>/dev/null || echo 0)"
+    vendored="$(vendor_names | wc -l | tr -d ' ')"
+    if [ "$locked" = "$vendored" ]; then ok "mirror.lock.json is current ($locked entries)"
+    else fail "mirror.lock.json has $locked entries, vendor.json has $vendored — run: agent-skills mirror --prune"; fi
+  else
+    fail "mirror/mirror.lock.json is missing — run: agent-skills mirror"
+  fi
+
+  [ -L "$CLAUDE_DIR/CLAUDE.md" ] && [ -e "$CLAUDE_DIR/CLAUDE.md" ] \
+    && ok "global Claude instructions resolve" \
+    || fail "global Claude instructions are not managed — run: agent-manager pull"
+
+  head1 "Result"
+  if failures; then
+    say "  ${C_GRN}all checks passed${C_OFF}"
+    say ""
+    say "  Ready. Run these yourself:"
+    say ""
+    say "    git -C $(shortp "$REPO") add -A"
+    say "    git -C $(shortp "$REPO") commit -m \"<what changed>\""
+    say "    git -C $(shortp "$REPO") push"
+    say ""
+    return 0
+  else
+    local n=$?
+    say "  ${C_RED}$n check(s) failed — not ready to commit${C_OFF}"
+    return 1
+  fi
+}
+
+# ---------------------------------------------------------------- install / doctor / root / project
+
+cmd_install() { exec "$REPO/install.sh" "$@"; }
+cmd_doctor() { exec "$REPO/doctor.sh" "$@"; }
+
+cmd_root() {
+  local action="${1:-status}"; [ "$#" -gt 0 ] && shift
+  case "$action" in
+    status)
+      local active; active="$(manager_active_root)"
+      say "active: ${active:-<none>}"
+      say "current: $([ -L "$MANAGER_CURRENT" ] && readlink "$MANAGER_CURRENT" || echo '<missing>')"
+      ;;
+    switch)
+      local candidate="${1:?usage: agent-manager root switch <checkout>}"
+      candidate="$(canonical_path "$candidate")"
+      [ -f "$candidate/vendor.json" ] && [ -x "$candidate/bin/agent-manager" ] && [ -d "$candidate/skills" ] \
+        || { fail "not an agent-manager checkout: $candidate"; return 1; }
+      local old; old="$(manager_active_root)"
+      if [ -n "$old" ] && [ -d "$old/.git" ] && [ -n "$(git -C "$old" status --porcelain 2>/dev/null)" ]; then
+        fail "active checkout has uncommitted changes: $(shortp "$old")"
+        info "commit or move those changes before switching roots"
+        return 1
+      fi
+      ensure_dir "$MANAGER_CONFIG_HOME"; ensure_dir "$MANAGER_DATA_HOME"
+      if [ "$DRY_RUN" = 1 ]; then
+        run "switch active root to $candidate"
+      else
+        local tmp_state tmp_link
+        tmp_state="$(mktemp "$MANAGER_CONFIG_HOME/state.XXXXXX")"
+        jq -n --arg root "$candidate" '{version: 1, activeRoot: $root}' > "$tmp_state"
+        tmp_link="$MANAGER_DATA_HOME/current.next"
+        [ -e "$tmp_link" ] || [ -L "$tmp_link" ] && rm -f "$tmp_link"
+        ln -s "$candidate" "$tmp_link"
+        python3 - "$tmp_link" "$MANAGER_CURRENT" <<'PY'
+import os, sys
+os.replace(sys.argv[1], sys.argv[2])
+PY
+        mv "$tmp_state" "$MANAGER_STATE"
+        ok "active root -> $(shortp "$candidate")"
+      fi
+      ;;
+    *) fail "usage: agent-manager root status|switch <checkout>"; return 2 ;;
+  esac
+}
+
+cmd_project_init() {
+  local project="${1:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+  project="$(canonical_path "$project")"
+  [ -d "$project" ] || { fail "project does not exist: $project"; return 1; }
+  local canonical="$project/.agents/skills" claude_root="$project/.claude/skills"
+  local entry name target
+  ensure_dir "$canonical"
+  ensure_dir "$project/.claude"
+
+  if [ -d "$claude_root" ] && [ ! -L "$claude_root" ]; then
+    shopt -s dotglob nullglob
+    for entry in "$claude_root"/*; do
+      name="$(basename "$entry")"
+      [ -e "$canonical/$name" ] || [ -L "$canonical/$name" ] || continue
+      entries_equal "$entry" "$canonical/$name" || {
+        fail "project skill conflict '$name': $entry differs from $canonical/$name"
+      }
+    done
+    shopt -u dotglob nullglob
+    failures || return 1
+
+    shopt -s dotglob nullglob
+    for entry in "$claude_root"/*; do
+      name="$(basename "$entry")"
+      if [ -e "$canonical/$name" ] || [ -L "$canonical/$name" ]; then
+        stash "$entry" "project-skills/$(basename "$project")/duplicates/$name"
+      else
+        run mv "$entry" "$canonical/$name"
+        ok "migrated project skill '$name' into .agents/skills"
+      fi
+    done
+    shopt -u dotglob nullglob
+    [ "$DRY_RUN" = 1 ] || rmdir "$claude_root"
+  elif [ -L "$claude_root" ]; then
+    target="$(readlink "$claude_root")"
+    if [ "$target" != "../.agents/skills" ] || [ "$(canonical_path "$claude_root")" != "$(canonical_path "$canonical")" ]; then
+      stash "$claude_root" "project-skills/$(basename "$project")/claude-root.symlink"
+    fi
+  elif [ -e "$claude_root" ]; then
+    stash "$claude_root" "project-skills/$(basename "$project")/claude-root"
+  fi
+
+  if [ ! -L "$claude_root" ] || [ "$(readlink "$claude_root")" != "../.agents/skills" ]; then
+    run ln -s "../.agents/skills" "$claude_root"
+    ok "project skill roots shared between Claude Code and Codex"
+  else
+    info "project skill roots already shared"
+  fi
+
+  local agents="$project/AGENTS.md" claude="$project/CLAUDE.md"
+  if [ -e "$agents" ] || [ -L "$agents" ]; then info "AGENTS.md already exists — left unchanged"
+  elif [ "$DRY_RUN" = 1 ]; then run "create $agents"
+  else printf '%s\n' '# Project Instructions' '' 'Add shared Claude Code and Codex project guidance here.' > "$agents"; ok "created $agents"; fi
+  if [ -e "$claude" ] || [ -L "$claude" ]; then info "CLAUDE.md already exists — left unchanged"
+  elif [ "$DRY_RUN" = 1 ]; then run "create $claude importing AGENTS.md"
+  else printf '%s\n' '@AGENTS.md' > "$claude"; ok "created $claude"; fi
+}
+
+# ---------------------------------------------------------------- main
+
+case "${1:-}" in
+  install) shift; cmd_install "$@" ;;
+  doctor|check) shift; cmd_doctor "$@" ;;
+  root) shift; cmd_root "$@" ;;
+  project) shift; [ "${1:-}" = init ] || { fail "usage: agent-manager project init [path]"; exit 2; }; shift; cmd_project_init "$@" ;;
+  pull) shift; cmd_pull "$@" ;;
+  push) shift; cmd_push "$@" ;;
+  -h|--help|help|"") usage 0 ;;
+  *) echo "unknown command: $1" >&2; usage 2 ;;
+esac

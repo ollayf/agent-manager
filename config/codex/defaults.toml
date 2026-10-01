@@ -1,0 +1,4 @@
+# Portable defaults owned by agent-manager. Machine-local projects, trust, plugins,
+# authentication and runtime metadata remain in ~/.codex/config.toml outside this block.
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"

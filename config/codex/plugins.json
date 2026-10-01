@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "comment": "Desired Codex plugin baseline. Built-in marketplaces are discovered by Codex and are not recorded with machine-specific paths.",
+  "plugins": [
+    { "name": "browser-use", "marketplace": "openai-bundled" },
+    { "name": "documents", "marketplace": "openai-primary-runtime" },
+    { "name": "spreadsheets", "marketplace": "openai-primary-runtime" },
+    { "name": "presentations", "marketplace": "openai-primary-runtime" }
+  ]
+}

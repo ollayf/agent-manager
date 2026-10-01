@@ -1,0 +1,192 @@
+{
+  "version": 1,
+  "comment": "Frozen copies of every vendored skill, read only when upstream cannot be reached. Refresh with: agent-skills mirror. Restore with: agent-skills sync --offline. A diff here means upstream changed since capture — skills/ is the live path, never this.",
+  "skills": {
+    "browser": {
+      "type": "local",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 1,
+      "kb": 12,
+      "path": "~/compile/browser-harness"
+    },
+    "diagnose": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 2,
+      "kb": 12,
+      "source": "mattpocock/skills",
+      "rev": "43d464d0e9d1049b9d525975c0f7367ab7e01a5f"
+    },
+    "find-skills": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 1,
+      "kb": 8,
+      "source": "vercel-labs/skills",
+      "rev": "3013fdeb8a11b10b1eb795ec3ae8bfca38f7c26d"
+    },
+    "frontend-design": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 2,
+      "kb": 20,
+      "source": "anthropics/claude-code",
+      "rev": "3bd61bab4d6b858c5d3af8adf14b917ce853e4c5"
+    },
+    "frontend-slides": {
+      "type": "git",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 10,
+      "kb": 92,
+      "url": "https://github.com/zarazhangrui/frontend-slides.git",
+      "rev": "fbf2c17fa4356e7802b055a3626c7dd6a5d509ea"
+    },
+    "grill-me": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 1,
+      "kb": 4,
+      "source": "mattpocock/skills",
+      "rev": "2a1ad17028306ebe45f0e49703fa28b9b2e7f499"
+    },
+    "grill-with-docs": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 3,
+      "kb": 12,
+      "source": "mattpocock/skills",
+      "rev": "3c4ac970c404e8d32c24f2725bfe679e455a925b"
+    },
+    "handoff": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 1,
+      "kb": 4,
+      "source": "mattpocock/skills",
+      "rev": "85c644da8f99d073b434261f1e3fc058e2116236"
+    },
+    "improve-codebase-architecture": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 4,
+      "kb": 20,
+      "source": "mattpocock/skills",
+      "rev": "3ad8fa787b3b9b622d1f5a3d0afc27812ac782fa"
+    },
+    "remotion-best-practices": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 110,
+      "kb": 1320,
+      "source": "remotion-dev/skills",
+      "rev": "ff8eedf1655aa6d8086e2c33b529ff686a747e31"
+    },
+    "remotion-captions": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 4,
+      "kb": 20,
+      "source": "remotion-dev/skills",
+      "rev": "500fecae461deab552c800f8ad6a926f76e17452"
+    },
+    "remotion-create": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 3,
+      "kb": 12,
+      "source": "remotion-dev/skills",
+      "rev": "d4de2393934871f310d299e58489a0d59dc01cf3"
+    },
+    "remotion-docs": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 1,
+      "kb": 4,
+      "source": "remotion-dev/skills",
+      "rev": "dea3a15cf8800ce0bdfa1b28b9705111b2377df5"
+    },
+    "remotion-interactivity": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 1,
+      "kb": 8,
+      "source": "remotion-dev/skills",
+      "rev": "83ca73576b735f6bb7cdb770533c64d862074e02"
+    },
+    "remotion-maps": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 30,
+      "kb": 544,
+      "source": "remotion-dev/skills",
+      "rev": "d790bb075240a5e9fd84498ae8d556dc1dd854c5"
+    },
+    "remotion-markup": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 59,
+      "kb": 684,
+      "source": "remotion-dev/skills",
+      "rev": "d8c727c1dc5062a725df6b24e5c5a7f5db76588b"
+    },
+    "remotion-multimedia": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 4,
+      "kb": 16,
+      "source": "remotion-dev/skills",
+      "rev": "81a2bc89cc79019359af8e928f8b04e45c458d0f"
+    },
+    "remotion-render": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 2,
+      "kb": 8,
+      "source": "remotion-dev/skills",
+      "rev": "54aaa25be8e3e838e08123bef46e000499be7cf4"
+    },
+    "remotion-saas": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 4,
+      "kb": 16,
+      "source": "remotion-dev/skills",
+      "rev": "81bf66ad12d9ac67e6e492a915a76daa53470067"
+    },
+    "remotion-upgrade": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 1,
+      "kb": 4,
+      "source": "remotion-dev/skills",
+      "rev": "5c85d1a2d7ae19d198d1be854552c6d57f96e433"
+    },
+    "skill-creator": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 18,
+      "kb": 248,
+      "source": "anthropics/skills",
+      "rev": "98a510d1cfef9f82c3b1eec200229ca68725e613"
+    },
+    "slides": {
+      "type": "git",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 17,
+      "kb": 240,
+      "url": "https://github.com/nghiahsgs/skills-slides.git",
+      "rev": "c271d3cda03bf79733cc91ba28e25716196638b7",
+      "excluded": [
+        "examples/screenshots"
+      ]
+    },
+    "zoom-out": {
+      "type": "skills-cli",
+      "capturedAt": "2026-08-30T21:07:17Z",
+      "files": 1,
+      "kb": 4,
+      "source": "mattpocock/skills",
+      "rev": "6ecebabdea814d12888f56a611da7bf182b5fb26"
+    }
+  }
+}

@@ -1,0 +1,25 @@
+# --- secrets: never commit ---
+secrets.env
+*.local.json
+*.local.env
+
+# --- rendered-from-template config (holds real tokens) ---
+config/mode-configs/glm.json
+config/mode-configs/glm-2.json
+
+# --- macOS / python noise ---
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+
+# --- editor ---
+*.swp
+.idea/
+.vscode/
+
+# --- local skill development/evaluation workspaces ---
+/skills/*-workspace/
+
+# --- skill-editor soft deletes: timestamped buckets of removed content, never ours to keep ---
+/skills/.trash/
