@@ -1,0 +1,60 @@
+{
+  "version": "2.3.1",
+  "skill": "archive-icloud-upgrade",
+  "title": "A plan before a migration.",
+  "subtitle": "Format · root location · folder layout",
+  "steps": [
+    [
+      "01",
+      "Discover",
+      "status and registry show the archives. --scan registers older indexes where needed."
+    ],
+    [
+      "02",
+      "Show the plan",
+      "upgrade --plan names each step, refusal, upload wait and disk-space cost. Scope it to a path, repo, or --all."
+    ],
+    [
+      "03",
+      "Apply the decision",
+      "Preserve the user’s existing authorization. Run the same scope after the plan has been reviewed."
+    ],
+    [
+      "04",
+      "Check the outcome",
+      "verify each upgraded repo. Check upload-status, then evict eligible uploaded copies."
+    ]
+  ],
+  "nodes": [
+    [
+      "fmt1to2",
+      "Files and directories → files/\nSmall packs → verified raw files\nLarge packs → .big/"
+    ],
+    [
+      "park",
+      "Opt an older repo into _archive/\nSave the local setting first\nKeep records and cloud bytes"
+    ],
+    [
+      "relocate · last",
+      "Wait for uploaded files\nOne rename into repos/<path>/\nKeep old roots in the registry"
+    ]
+  ],
+  "details": [
+    [
+      "One engine for both skills",
+      "The upgrade skill has no separate executable. It drives archive-icloud/icloud_archive.py and the same store, locks, registry and readers."
+    ],
+    [
+      "A resumable migration",
+      "Keep each v1 row until its files are durably recorded. Recover interrupted steps. Upload waits defer a root move so it can be retried."
+    ],
+    [
+      "No layout surprises",
+      "Older repos keep empty folders in place until the park step. A taken _archive/ name is reported; --park-dir can select an available name."
+    ],
+    [
+      "Historical evidence",
+      "This view describes rebuild 2.3.1. The recovered 2.3.0 guide is preserved separately; missing original releases and past migration logs have not been fabricated."
+    ]
+  ]
+}

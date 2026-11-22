@@ -2,5 +2,5 @@
 # Agent-neutral entrypoint. The implementation remains in claude-skills during the compatibility
 # window so existing external links keep working while both names expose identical behavior.
 set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HERE="$(python3 -c 'import os,sys; print(os.path.dirname(os.path.realpath(sys.argv[1])))' "${BASH_SOURCE[0]}")"
 exec "$HERE/claude-skills" "$@"

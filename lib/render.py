@@ -22,7 +22,10 @@ def load_env(path):
             if not line or line.startswith("#") or "=" not in line:
                 continue
             key, _, val = line.partition("=")
-            env[key.strip()] = val.strip().strip('"').strip("'")
+            key = key.strip()
+            if key.startswith("export "):
+                key = key[len("export "):].strip()
+            env[key] = val.strip().strip('"').strip("'")
     return env
 
 

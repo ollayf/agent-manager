@@ -1,0 +1,317 @@
+{
+  "version": "3.1.3",
+  "date": "2026-10-25",
+  "pytest": {
+    "tests": 399,
+    "errors": 0,
+    "failures": 0,
+    "skipped": 117,
+    "passed": 282
+  },
+  "pytest_seconds": 141.458,
+  "pytest_skips": {
+    "unavailable_historical_releases": 104,
+    "offline_ssd": 13
+  },
+  "mutations": {
+    "definitions": 100,
+    "killed": 79,
+    "skipped": 21,
+    "survived": 0,
+    "invalid": 0
+  },
+  "drive_mutations": {
+    "killed": 14,
+    "skipped": 0
+  },
+  "forward": {
+    "passed": 1,
+    "failed": 0,
+    "scenario": {
+      "passed": true,
+      "scenario": "direct Drive archive/read/scoped restore",
+      "initial_refusal_recovered": true,
+      "notes": "Independent pass found metadata-version false conflict; supported verify --fix recovered it. A new regression and content-hash guard fix were added."
+    }
+  },
+  "live": {
+    "checks": 20,
+    "passed": true,
+    "remote_test_folder_trashed": true,
+    "results": [
+      {
+        "test": "setup-plan",
+        "passed": true,
+        "returncode": 0,
+        "expected": 0,
+        "seconds": 1.661
+      },
+      {
+        "test": "setup",
+        "passed": true,
+        "returncode": 0,
+        "expected": 0,
+        "seconds": 4.813
+      },
+      {
+        "test": "doctor",
+        "passed": true,
+        "returncode": 0,
+        "expected": 0,
+        "seconds": 4.65
+      },
+      {
+        "test": "interrupted-chunk",
+        "passed": true,
+        "returncode": 99,
+        "expected": 99,
+        "seconds": 27.907
+      },
+      {
+        "test": "resume-upload",
+        "passed": true,
+        "returncode": 0,
+        "expected": 0,
+        "seconds": 48.974
+      },
+      {
+        "test": "raw-head",
+        "passed": true,
+        "returncode": 0,
+        "expected": 0,
+        "seconds": 17.971
+      },
+      {
+        "test": "verify-cloud",
+        "passed": true,
+        "returncode": 0,
+        "expected": 0,
+        "seconds": 16.501
+      },
+      {
+        "test": "deep-status",
+        "passed": true,
+        "returncode": 0,
+        "expected": 0,
+        "seconds": 17.8
+      },
+      {
+        "test": "no-overwrite",
+        "passed": true,
+        "returncode": 1,
+        "expected": 1,
+        "seconds": 10.815
+      },
+      {
+        "test": "restore-raw",
+        "passed": true,
+        "returncode": 0,
+        "expected": 0,
+        "seconds": 41.357
+      },
+      {
+        "test": "archive-empty",
+        "passed": true,
+        "returncode": 0,
+        "expected": 0,
+        "seconds": 44.829
+      },
+      {
+        "test": "restore-empty",
+        "passed": true,
+        "returncode": 0,
+        "expected": 0,
+        "seconds": 43.511
+      },
+      {
+        "test": "archive-packed",
+        "passed": true,
+        "returncode": 0,
+        "expected": 0,
+        "seconds": 65.207
+      },
+      {
+        "test": "read-packed-head",
+        "passed": true,
+        "returncode": 0,
+        "expected": 0,
+        "seconds": 21.471
+      },
+      {
+        "test": "restore-packed",
+        "passed": true,
+        "returncode": 0,
+        "expected": 0,
+        "seconds": 70.369
+      },
+      {
+        "test": "archive-old",
+        "passed": true,
+        "returncode": 0,
+        "expected": 0,
+        "seconds": 49.547
+      },
+      {
+        "test": "keep-changed",
+        "passed": true,
+        "returncode": 0,
+        "expected": 0,
+        "seconds": 9.451
+      },
+      {
+        "test": "update-retains-old",
+        "passed": true,
+        "returncode": 0,
+        "expected": 0,
+        "seconds": 60.787
+      },
+      {
+        "test": "restore-new",
+        "passed": true,
+        "returncode": 0,
+        "expected": 0,
+        "seconds": 43.896
+      },
+      {
+        "test": "verify-final",
+        "passed": true,
+        "returncode": 0,
+        "expected": 0,
+        "seconds": 8.705
+      }
+    ],
+    "post_fix_multi_file_smoke": [
+      {
+        "test": "multi-file-no-false-conflict",
+        "passed": true,
+        "seconds": 89.471
+      },
+      {
+        "test": "multi-file-verify",
+        "passed": true,
+        "seconds": 24.956
+      },
+      {
+        "test": "raw-head-current",
+        "passed": true,
+        "seconds": 15.428
+      }
+    ],
+    "native_oauth_refresh": "passed"
+  },
+  "runtime_sha256": {
+    "archive.py": "46865553365f441ae4dba5b8cbbe0aee2f04d8f907678c7c524b4b5b30a4a33f",
+    "storage.py": "325706887e9c69a3c3a6d368df45fdbb7ea59977031d074f6c7ad8006b829fa2",
+    "drive_api.py": "839847ffddce2ec570368bed519e923396ff44072389723bfc45c2e3c2e7862c",
+    "drive_archive.py": "a61527ea87df4892257bacad69d491e6d6d411ea22e8f521555f48a20e7c76f6",
+    "icloud_status.swift": "edc0305cd2cbf7667b6e1cb3abdbde2f7b7d159a9a4a231cd334a7e9d60a086a",
+    "SKILL.md": "b1b1aa9b4a8e01bf6b9ad81fa213b1dce872e9e5296c5961114d934b80bd1910"
+  },
+  "filesystem_format": 2,
+  "direct_api_format": 3,
+  "permanent_google_target_registered": false,
+  "ssd_default_changed": false,
+  "adoption_live": [
+    {
+      "test": "adopt-plan-live",
+      "passed": true,
+      "seconds": 14.743
+    },
+    {
+      "test": "adopt-live",
+      "passed": true,
+      "seconds": 5.207
+    },
+    {
+      "test": "read-via-new-machine-config",
+      "passed": true,
+      "seconds": 15.851
+    },
+    {
+      "test": "current-311-archive",
+      "passed": true,
+      "seconds": 48.034
+    },
+    {
+      "test": "current-311-verify",
+      "passed": true,
+      "seconds": 30.907
+    }
+  ],
+  "frozen_live": [
+    {
+      "test": "frozen-310-read",
+      "passed": true,
+      "seconds": 34.283
+    },
+    {
+      "test": "frozen-311-read",
+      "passed": true,
+      "seconds": 24.361
+    },
+    {
+      "test": "frozen-311-restore",
+      "passed": true,
+      "seconds": 59.406
+    },
+    {
+      "test": "verify-after-frozen",
+      "passed": true,
+      "seconds": 23.172
+    }
+  ],
+  "remote_cleanup": {
+    "remote_test_folder_trashed": true,
+    "folder_id": "1y3Fp7eYjCh-a-qIkDrHepixxcjNYuQrv"
+  },
+  "browser": {
+    "pages": [
+      {
+        "page": "index.html",
+        "desktop": "pass"
+      },
+      {
+        "page": "workflow.html",
+        "desktop": "pass"
+      },
+      {
+        "page": "storage.html",
+        "desktop": "pass"
+      },
+      {
+        "page": "security.html",
+        "desktop": "pass"
+      },
+      {
+        "page": "checks.html",
+        "desktop": "pass"
+      },
+      {
+        "page": "recovery.html",
+        "desktop": "pass"
+      },
+      {
+        "page": "evidence.html",
+        "desktop": "pass"
+      }
+    ],
+    "checks": 65,
+    "interaction_tests": "passed",
+    "mobile_widths": [
+      390,
+      768
+    ],
+    "javascript_errors": [],
+    "external_requests": [],
+    "no_javascript": "passed"
+  },
+  "frozen_releases": [
+    "2.3.1",
+    "3.0.0",
+    "3.1.0",
+    "3.1.1",
+    "3.1.2",
+    "3.1.3"
+  ],
+  "frozen_checksums_verified": true
+}

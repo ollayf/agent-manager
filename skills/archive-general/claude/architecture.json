@@ -1,0 +1,60 @@
+{
+  "version": "3.0.0",
+  "skill": "archive-general",
+  "title": "A file leaves. Its place stays.",
+  "subtitle": "Setup · archive · read · restore · verify · upgrade · import",
+  "steps": [
+    [
+      "01",
+      "Check drive and project",
+      "Verify marker and volume UUID. Resolve the project and its recorded target."
+    ],
+    [
+      "02",
+      "Check the live file",
+      "Recent writes, busy markers, open handles and database sidecars keep it local."
+    ],
+    [
+      "03",
+      "Copy, verify, record",
+      "Hold the repo lock. Check SHA-256. Flush the durable record before removing the source."
+    ],
+    [
+      "04",
+      "Keep the structure",
+      "Empty folders follow their archived files into _archive/. mkdir + rmdir never carry a file."
+    ]
+  ],
+  "nodes": [
+    [
+      "Live project",
+      "Working files\nARCHIVE.md · human summary\nARCHIVE.manifest.jsonl · every record"
+    ],
+    [
+      "One archive root",
+      "files/ · raw, read in place\n.big/ · verified zstd parts\n.versions/ · previous copies"
+    ],
+    [
+      "Shared registry",
+      "registry/<id>.json\nREGISTRY.md\nOld roots and import provenance"
+    ]
+  ],
+  "details": [
+    [
+      "Read without restoring",
+      "read prints a raw file’s archive location. For compressed data, read --head N streams a sample. Over 10 GB, full decompression requires --full."
+    ],
+    [
+      "Bring one file back",
+      "restore checks size, hash, free space and metadata. It removes the record and archive copy, saves the indexes, then repairs the parked folder tree."
+    ],
+    [
+      "Investigate an interruption",
+      "verify is read-only. Inspect its findings before verify --fix. Differing copies and unknown orphans remain for a person to inspect."
+    ],
+    [
+      "Release boundaries",
+      "Every record carries format and writer version. .history/ freezes authentic released runtimes. Original releases were unavailable, so historical fallback is limited to releases actually present."
+    ]
+  ]
+}

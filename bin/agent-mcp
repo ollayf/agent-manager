@@ -2,10 +2,11 @@
 # Reconcile portable, secret-free MCP intent into Claude Code and Codex.
 set -euo pipefail
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO="$(python3 -c 'import os,sys; print(os.path.dirname(os.path.dirname(os.path.realpath(sys.argv[1]))))' "${BASH_SOURCE[0]}")"
 # shellcheck source=../lib/common.sh
 source "$REPO/lib/common.sh"
-MANIFEST="$REPO/config/shared/mcp.json"
+MANIFEST="${AGENT_MCP_MANIFEST:-$REPO/config/shared/mcp.json}"
+SECRETS_FILE="${AGENT_SECRETS_FILE:-$REPO/secrets.env}"
 
 usage() { echo "usage: agent-mcp sync|status [--dry-run]"; exit "${1:-0}"; }
 
@@ -21,15 +22,57 @@ validate_manifest() {
   local bad
   bad="$(jq -r '.servers | to_entries[] | .key as $n | (.value.env // {}) | to_entries[] | select(.value | test("^[A-Z][A-Z0-9_]*$") | not) | $n + ":" + .key' "$MANIFEST")"
   [ -z "$bad" ] || { fail "MCP env mappings must name environment variables, not literal secrets: $bad"; return 1; }
+  bad="$(jq -r '.servers | to_entries[] | select((.value.bearer_token_env // "X") | test("^[A-Z][A-Z0-9_]*$") | not) | .key' "$MANIFEST")"
+  [ -z "$bad" ] || { fail "bearer_token_env must name an environment variable: $bad"; return 1; }
+  # Literal headers would put a credential in git; only the named-variable form is supported.
+  bad="$(jq -r '.servers | to_entries[] | select(.value.headers != null) | .key' "$MANIFEST")"
+  [ -z "$bad" ] || { fail "MCP 'headers' are not supported (use bearer_token_env): $bad"; return 1; }
+}
+
+# A credential comes from the environment first, then from the gitignored secrets.env.
+# Never echo the value: callers pass it straight to the agent CLI.
+secret_value() {
+  local key="$1"
+  if [ -n "${!key-}" ]; then printf '%s' "${!key}"; return 0; fi
+  [ -f "$SECRETS_FILE" ] || return 0
+  python3 - "$REPO/lib" "$SECRETS_FILE" "$key" <<'PY_SECRET'
+import sys
+sys.path.insert(0, sys.argv[1])
+from render import load_env
+sys.stdout.write(load_env(sys.argv[2]).get(sys.argv[3], ""))
+PY_SECRET
+}
+
+# Like run(), but a dry run prints a redacted description instead of the real arguments.
+run_secret() {
+  local shown="$1"; shift
+  if [ "$DRY_RUN" = 1 ]; then
+    _PENDING=$((_PENDING+1))
+    printf '  %sdry%s  %s\n' "$C_YEL" "$C_OFF" "$shown"
+  else
+    "$@"
+  fi
 }
 
 add_server() {
-  local agent="$1" name="$2" transport url command env_key host_key value
+  local agent="$1" name="$2" transport url command env_key host_key value bearer
   transport="$(jq -r --arg n "$name" '.servers[$n].transport' "$MANIFEST")"
   if [ "$transport" = http ]; then
     url="$(jq -r --arg n "$name" '.servers[$n].url' "$MANIFEST")"
-    if [ "$agent" = claude ]; then run claude mcp add --scope user --transport http "$name" "$url"
-    else run codex mcp add "$name" --url "$url"; fi
+    bearer="$(jq -r --arg n "$name" '.servers[$n].bearer_token_env // empty' "$MANIFEST")"
+    if [ -z "$bearer" ]; then
+      if [ "$agent" = claude ]; then run claude mcp add --scope user --transport http "$name" "$url"
+      else run codex mcp add "$name" --url "$url"; fi
+    elif [ "$agent" = claude ]; then
+      # Claude stores the rendered header in its own machine-local config.
+      value="$(secret_value "$bearer")"
+      [ -n "$value" ] || { fail "$name: $bearer is not set in the environment or $(shortp "$SECRETS_FILE")"; return 1; }
+      run_secret "claude mcp add --scope user --transport http $name $url --header 'Authorization: Bearer \${$bearer}'" \
+        claude mcp add --scope user --transport http "$name" "$url" --header "Authorization: Bearer $value"
+    else
+      # Codex reads the variable at runtime, so nothing secret is written to its config.
+      run codex mcp add "$name" --url "$url" --bearer-token-env-var "$bearer"
+    fi
     return
   fi
   [ "$transport" = stdio ] || { fail "$name: transport must be http or stdio"; return 1; }
@@ -38,12 +81,17 @@ add_server() {
   while IFS= read -r value; do args+=("$value"); done < <(jq -r --arg n "$name" '.servers[$n].args // [] | .[]' "$MANIFEST")
   while IFS=$'\t' read -r host_key env_key; do
     [ -n "$host_key" ] || continue
-    value="${!env_key-}"
-    [ -n "$value" ] || { fail "$name: required environment variable $env_key is unset"; return 1; }
+    value="$(secret_value "$env_key")"
+    [ -n "$value" ] || { fail "$name: $env_key is not set in the environment or $(shortp "$SECRETS_FILE")"; return 1; }
     if [ "$agent" = claude ]; then env_args+=("-e" "$host_key=$value"); else env_args+=("--env" "$host_key=$value"); fi
   done < <(jq -r --arg n "$name" '.servers[$n].env // {} | to_entries[] | [.key,.value] | @tsv' "$MANIFEST")
-  if [ "$agent" = claude ]; then run claude mcp add --scope user "$name" "${env_args[@]}" -- "$command" "${args[@]}"
-  else run codex mcp add "${env_args[@]}" "$name" -- "$command" "${args[@]}"; fi
+  if [ "$agent" = claude ]; then
+    run_secret "claude mcp add --scope user $name <${#env_args[@]} env args redacted> -- $command ${args[*]}" \
+      claude mcp add --scope user "$name" ${env_args[@]+"${env_args[@]}"} -- "$command" ${args[@]+"${args[@]}"}
+  else
+    run_secret "codex mcp add <${#env_args[@]} env args redacted> $name -- $command ${args[*]}" \
+      codex mcp add ${env_args[@]+"${env_args[@]}"} "$name" -- "$command" ${args[@]+"${args[@]}"}
+  fi
 }
 
 sync_agent() {
@@ -73,7 +121,7 @@ cmd_status() {
 }
 
 case "${1:-}" in
-  sync) validate_manifest; sync_agent claude; sync_agent codex ;;
+  sync) validate_manifest; sync_agent claude || true; sync_agent codex || true; failures ;;
   status) cmd_status ;;
   -h|--help|help|"") usage 0 ;;
   *) usage 2 ;;

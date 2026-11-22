@@ -1,0 +1,130 @@
+{
+  "version": "2.3.1",
+  "date": "2026-10-18",
+  "pytest": {
+    "tests": 259,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 104,
+    "passed": 155
+  },
+  "mutants": {
+    "KILLED": 52,
+    "SKIPPED": 21
+  },
+  "agent_evaluations": [
+    {
+      "scenario": "e1",
+      "status": "passed",
+      "findings": []
+    },
+    {
+      "scenario": "e10",
+      "status": "passed",
+      "findings": []
+    },
+    {
+      "scenario": "e11",
+      "status": "passed",
+      "findings": []
+    },
+    {
+      "scenario": "e12",
+      "status": "passed",
+      "findings": []
+    },
+    {
+      "scenario": "e13",
+      "status": "skipped",
+      "findings": [
+        "original history/2.2.1 unavailable (guide A6)"
+      ]
+    },
+    {
+      "scenario": "e14",
+      "status": "passed",
+      "findings": []
+    },
+    {
+      "scenario": "e15",
+      "status": "passed",
+      "findings": []
+    },
+    {
+      "scenario": "e16",
+      "status": "passed",
+      "findings": []
+    },
+    {
+      "scenario": "e2",
+      "status": "passed",
+      "findings": []
+    },
+    {
+      "scenario": "e3",
+      "status": "skipped",
+      "findings": [
+        "original history/1.0.0 unavailable (guide A6)"
+      ]
+    },
+    {
+      "scenario": "e4",
+      "status": "skipped",
+      "findings": [
+        "original history/1.0.0 unavailable (guide A6)"
+      ]
+    },
+    {
+      "scenario": "e5",
+      "status": "skipped",
+      "findings": [
+        "original history/1.0.0 unavailable (guide A6)"
+      ]
+    },
+    {
+      "scenario": "e6",
+      "status": "passed",
+      "findings": []
+    },
+    {
+      "scenario": "e7",
+      "status": "passed",
+      "findings": []
+    },
+    {
+      "scenario": "e8",
+      "status": "passed",
+      "findings": []
+    },
+    {
+      "scenario": "e9",
+      "status": "skipped",
+      "findings": [
+        "original history/1.0.0 unavailable (guide A6)"
+      ]
+    }
+  ],
+  "scorer_selftest": {
+    "good": 11,
+    "bad": 11,
+    "skipped_scenarios": 5,
+    "passed": true
+  },
+  "swift": {
+    "typecheck": "passed",
+    "outside_icloud": "not-icloud"
+  },
+  "source_sha256": {
+    "archive-icloud/icloud_archive.py": "b1bc6d60051fab4fa0f989e38c43fdf2bfa60de075603baafb01e9995fc11379",
+    "archive-icloud/SKILL.md": "3d9707013f93001578813b924652ac6f982ce7929ef270655ef8b0af4f97d7e4",
+    "archive-icloud/icloud_status.swift": "edc0305cd2cbf7667b6e1cb3abdbde2f7b7d159a9a4a231cd334a7e9d60a086a",
+    "archive-icloud-upgrade/SKILL.md": "0df29a4fa3a9a9212abd8f26695a59c7bf3f4a1db6d5ed79684131003e201ecb"
+  },
+  "generic_skill_lint": {
+    "passed": false,
+    "reason": "Verbatim recovered frontmatter has version and argument-hint; main description is 1205 characters."
+  },
+  "real_data_operations": false,
+  "original_history_available": false,
+  "markdown_byte_identity_certified": false
+}

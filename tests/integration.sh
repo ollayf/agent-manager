@@ -100,7 +100,8 @@ mkdir -p "$PROJECT"
 [ -L "$PROJECT/.claude/skills" ]
 [ "$(readlink "$PROJECT/.claude/skills")" = '../.agents/skills' ]
 [ -f "$PROJECT/.claude/skills/project-test/SKILL.md" ]
-[ "$(cat "$PROJECT/CLAUDE.md")" = '@AGENTS.md' ]
+[ -L "$PROJECT/CLAUDE.md" ]
+[ "$(readlink "$PROJECT/CLAUDE.md")" = 'AGENTS.md' ]
 mkdir -p "$PROJECT/.claude/skills/claude-direct"
 printf '%s\n' '---' 'name: claude-direct' 'description: Written through Claude.' '---' > "$PROJECT/.claude/skills/claude-direct/SKILL.md"
 [ -f "$PROJECT/.agents/skills/claude-direct/SKILL.md" ]
@@ -109,7 +110,7 @@ LEGACY_PROJECT="$TEST_ROOT/legacy-project"
 mkdir -p "$LEGACY_PROJECT/.claude/skills/legacy-skill"
 printf '%s\n' '---' 'name: legacy-skill' 'description: Existing project skill.' '---' > "$LEGACY_PROJECT/.claude/skills/legacy-skill/SKILL.md"
 "$FIXTURE/bin/agent-manager" project init "$LEGACY_PROJECT" >/dev/null
-[ -L "$LEGACY_PROJECT/.claude/skills" ]
+[ -L "$LEGACY_PROJECT/.agents/skills" ]
 [ -f "$LEGACY_PROJECT/.agents/skills/legacy-skill/SKILL.md" ]
 
 # Reconciliation is idempotent and keeps the portable Codex project table.

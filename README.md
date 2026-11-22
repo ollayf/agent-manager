@@ -8,8 +8,8 @@ and Codex. Agent-native authentication, sessions and runtime state stay local.
 ```bash
 git clone <remote> ~/develop/agent-manager
 cd ~/develop/agent-manager
-cp secrets.env.example secrets.env   # optional Claude provider modes
-$EDITOR secrets.env
+cp /path/to/your/secrets.env .       # or: cp secrets.env.example secrets.env && $EDITOR secrets.env
+chmod 600 secrets.env
 ./install.sh
 ./doctor.sh
 ```
@@ -49,10 +49,15 @@ agent-skills create my-skill --scope global
 agent-skills create repo-checks --scope project --project /path/to/project
 ```
 
-Global is the default and reaches every Claude account plus Codex. Project scope creates the
-canonical skill under `<project>/.agents/skills`; the entire `<project>/.claude/skills` directory
-is a relative link to that tree. Direct skill writes by either agent therefore reach the same
-physical files.
+Global is the default and reaches every Claude account plus Codex. Project scope shares the
+entire `.agents/skills` and `.claude/skills` directories with a relative link. Existing projects
+keep either physical root; new projects use `.agents/skills`. Direct skill writes by either
+agent therefore reach the same physical files, including newly created directories.
+
+`agent-manager project init` also links `AGENTS.md` and `CLAUDE.md`, preserving whichever
+already exists. Conflicting instruction files or skill names stop migration for reconciliation.
+It prepares shared files; use the `dual-agent-project` skill for the full MCP, permissions and
+workflow conversion.
 
 A skill written directly through an agent's linked global directory still lands in this repo.
 Doctor treats an unknown name as repo-owned, validates its metadata, and reports collisions.
@@ -78,8 +83,19 @@ claude-account remove claude4
 - `config/shared/instructions.md` feeds Claude's `CLAUDE.md` and Codex's `AGENTS.md`.
 - `config/codex/defaults.toml` owns a marked block in Codex config while preserving trust,
   projects, plugins and other machine-local content.
-- `config/shared/mcp.json` records secret-free MCP intent. Environment mappings contain variable
-  names, never token values. `agent-mcp sync` adds missing servers to both agents.
+- `config/shared/mcp.json` records secret-free MCP intent. `env` mappings and `bearer_token_env`
+  name variables, never token values; literal `headers` are rejected. `agent-mcp sync` adds
+  missing servers, reading each value from the environment or `secrets.env`. Claude stores the
+  rendered header in its own config; Codex reads the variable at runtime.
+
+## The one local file
+
+`secrets.env` (gitignored, `chmod 600`) holds every token and machine-specific value this repo
+needs. `secrets.env.example` lists each key with a placeholder. To set up another machine, copy
+`secrets.env` beside the new clone, then run `./install.sh`. Everything else is in Git or is
+recreated by logging in. Skills read their settings from environment variables or their own
+per-machine registries (for example, archive-general's `target add`), never from paths
+committed here.
 - Claude and Codex plugins use separate manifests and native CLIs.
 
 ## Commands

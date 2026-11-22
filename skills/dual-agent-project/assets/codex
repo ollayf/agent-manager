@@ -1,0 +1,7 @@
+#!/bin/sh
+# Refresh shared adapters before starting Codex, from any working directory.
+set -eu
+project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+python3 "$project_root/scripts/sync_agent_config.py"
+cd "$project_root"
+exec codex "$@"

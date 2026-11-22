@@ -20,7 +20,7 @@
 #
 set -euo pipefail
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO="$(python3 -c 'import os,sys; print(os.path.dirname(os.path.dirname(os.path.realpath(sys.argv[1]))))' "${BASH_SOURCE[0]}")"
 # shellcheck source=../lib/common.sh
 source "$REPO/lib/common.sh"
 
@@ -193,6 +193,21 @@ release_create_lock() {
 
 ensure_project_skill_roots() {
   local project="$1" canonical="$1/.agents/skills" claude_root="$1/.claude/skills"
+  # Existing projects may keep either physical root. Never force a migration just
+  # to create a skill (relative references can depend on the original location).
+  if [ -d "$canonical" ] && [ -d "$claude_root" ] \
+      && [ "$(canonical_path "$canonical")" = "$(canonical_path "$claude_root")" ]; then
+    return 0
+  fi
+  if [ -d "$claude_root" ] && [ ! -e "$canonical" ] && [ ! -L "$canonical" ]; then
+    ensure_dir "$project/.agents"
+    run ln -s "../.claude/skills" "$canonical"
+    return 0
+  fi
+  if { [ -e "$canonical" ] && [ ! -d "$canonical" ]; } || { [ -L "$canonical" ] && [ ! -e "$canonical" ]; }; then
+    fail "invalid project skill root: $canonical"
+    return 1
+  fi
   ensure_dir "$canonical"
   ensure_dir "$project/.claude"
   if [ -L "$claude_root" ] && [ "$(readlink "$claude_root")" = "../.agents/skills" ]; then

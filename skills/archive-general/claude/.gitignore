@@ -1,0 +1,10 @@
+# Run outputs from this machine's evals and handbook builds. They record local paths, drive
+# names, volume UUIDs and Drive folder links, so they stay local. Regenerate them with the
+# _*.py tools; tests, tools and evals.md are the portable part.
+/*-evidence/
+/handbook/
+/recovery.json
+/general-report.md
+/general-validation.json
+/drive-api-report.md
+__pycache__/

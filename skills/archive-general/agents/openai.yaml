@@ -1,0 +1,4 @@
+interface:
+  display_name: "Archive General"
+  short_description: "Archive and restore files across registered drives"
+  default_prompt: "Use $archive-general to manage the requested archive through its verified storage target."

@@ -3,20 +3,6 @@
   "comment": "Recipes for skills the repo does NOT own. `agent-skills sync` rebuilds these; they are gitignored in skills/.gitignore. Anything in skills/ NOT listed here is repo-owned and tracked.",
   "agentsDir": "~/.agents/skills",
   "skills": {
-    "frontend-design": {
-      "type": "skills-cli",
-      "source": "anthropics/claude-code",
-      "sourceUrl": "https://github.com/anthropics/claude-code.git",
-      "skillPath": "plugins/frontend-design/skills/frontend-design/SKILL.md",
-      "skillFolderHash": "3bd61bab4d6b858c5d3af8adf14b917ce853e4c5"
-    },
-    "find-skills": {
-      "type": "skills-cli",
-      "source": "vercel-labs/skills",
-      "sourceUrl": "https://github.com/vercel-labs/skills.git",
-      "skillPath": "skills/find-skills/SKILL.md",
-      "skillFolderHash": "3013fdeb8a11b10b1eb795ec3ae8bfca38f7c26d"
-    },
     "skill-creator": {
       "type": "skills-cli",
       "source": "anthropics/skills",
@@ -24,14 +10,6 @@
       "skillPath": "skills/skill-creator/SKILL.md",
       "skillFolderHash": "98a510d1cfef9f82c3b1eec200229ca68725e613",
       "pluginName": "example-skills"
-    },
-    "diagnose": {
-      "type": "skills-cli",
-      "source": "mattpocock/skills",
-      "sourceUrl": "https://github.com/mattpocock/skills.git",
-      "skillPath": "skills/engineering/diagnose/SKILL.md",
-      "skillFolderHash": "43d464d0e9d1049b9d525975c0f7367ab7e01a5f",
-      "pluginName": "mattpocock-skills"
     },
     "grill-me": {
       "type": "skills-cli",
@@ -57,99 +35,6 @@
       "skillFolderHash": "85c644da8f99d073b434261f1e3fc058e2116236",
       "pluginName": "mattpocock-skills"
     },
-    "improve-codebase-architecture": {
-      "type": "skills-cli",
-      "source": "mattpocock/skills",
-      "sourceUrl": "https://github.com/mattpocock/skills.git",
-      "skillPath": "skills/engineering/improve-codebase-architecture/SKILL.md",
-      "skillFolderHash": "3ad8fa787b3b9b622d1f5a3d0afc27812ac782fa",
-      "pluginName": "mattpocock-skills"
-    },
-    "zoom-out": {
-      "type": "skills-cli",
-      "source": "mattpocock/skills",
-      "sourceUrl": "https://github.com/mattpocock/skills.git",
-      "skillPath": "skills/engineering/zoom-out/SKILL.md",
-      "skillFolderHash": "6ecebabdea814d12888f56a611da7bf182b5fb26",
-      "pluginName": "mattpocock-skills"
-    },
-    "remotion-best-practices": {
-      "type": "skills-cli",
-      "source": "remotion-dev/skills",
-      "sourceUrl": "https://github.com/remotion-dev/skills.git",
-      "skillPath": "skills/remotion-best-practices/SKILL.md",
-      "skillFolderHash": "ff8eedf1655aa6d8086e2c33b529ff686a747e31"
-    },
-    "remotion-captions": {
-      "type": "skills-cli",
-      "source": "remotion-dev/skills",
-      "sourceUrl": "https://github.com/remotion-dev/skills.git",
-      "skillPath": "skills/remotion-captions/SKILL.md",
-      "skillFolderHash": "500fecae461deab552c800f8ad6a926f76e17452"
-    },
-    "remotion-create": {
-      "type": "skills-cli",
-      "source": "remotion-dev/skills",
-      "sourceUrl": "https://github.com/remotion-dev/skills.git",
-      "skillPath": "skills/remotion-create/SKILL.md",
-      "skillFolderHash": "d4de2393934871f310d299e58489a0d59dc01cf3"
-    },
-    "remotion-docs": {
-      "type": "skills-cli",
-      "source": "remotion-dev/skills",
-      "sourceUrl": "https://github.com/remotion-dev/skills.git",
-      "skillPath": "skills/remotion-docs/SKILL.md",
-      "skillFolderHash": "dea3a15cf8800ce0bdfa1b28b9705111b2377df5"
-    },
-    "remotion-interactivity": {
-      "type": "skills-cli",
-      "source": "remotion-dev/skills",
-      "sourceUrl": "https://github.com/remotion-dev/skills.git",
-      "skillPath": "skills/remotion-interactivity/SKILL.md",
-      "skillFolderHash": "83ca73576b735f6bb7cdb770533c64d862074e02"
-    },
-    "remotion-maps": {
-      "type": "skills-cli",
-      "source": "remotion-dev/skills",
-      "sourceUrl": "https://github.com/remotion-dev/skills.git",
-      "skillPath": "skills/remotion-maps/SKILL.md",
-      "skillFolderHash": "d790bb075240a5e9fd84498ae8d556dc1dd854c5"
-    },
-    "remotion-markup": {
-      "type": "skills-cli",
-      "source": "remotion-dev/skills",
-      "sourceUrl": "https://github.com/remotion-dev/skills.git",
-      "skillPath": "skills/remotion-markup/SKILL.md",
-      "skillFolderHash": "d8c727c1dc5062a725df6b24e5c5a7f5db76588b"
-    },
-    "remotion-multimedia": {
-      "type": "skills-cli",
-      "source": "remotion-dev/skills",
-      "sourceUrl": "https://github.com/remotion-dev/skills.git",
-      "skillPath": "skills/remotion-multimedia/SKILL.md",
-      "skillFolderHash": "81a2bc89cc79019359af8e928f8b04e45c458d0f"
-    },
-    "remotion-render": {
-      "type": "skills-cli",
-      "source": "remotion-dev/skills",
-      "sourceUrl": "https://github.com/remotion-dev/skills.git",
-      "skillPath": "skills/remotion-render/SKILL.md",
-      "skillFolderHash": "54aaa25be8e3e838e08123bef46e000499be7cf4"
-    },
-    "remotion-saas": {
-      "type": "skills-cli",
-      "source": "remotion-dev/skills",
-      "sourceUrl": "https://github.com/remotion-dev/skills.git",
-      "skillPath": "skills/remotion-saas/SKILL.md",
-      "skillFolderHash": "81bf66ad12d9ac67e6e492a915a76daa53470067"
-    },
-    "remotion-upgrade": {
-      "type": "skills-cli",
-      "source": "remotion-dev/skills",
-      "sourceUrl": "https://github.com/remotion-dev/skills.git",
-      "skillPath": "skills/remotion-upgrade/SKILL.md",
-      "skillFolderHash": "5c85d1a2d7ae19d198d1be854552c6d57f96e433"
-    },
     "slides": {
       "type": "git",
       "url": "https://github.com/nghiahsgs/skills-slides.git",
@@ -157,11 +42,6 @@
       "mirrorExclude": [
         "examples/screenshots"
       ]
-    },
-    "frontend-slides": {
-      "type": "git",
-      "url": "https://github.com/zarazhangrui/frontend-slides.git",
-      "note": "Cloned directly into skills/; carries its own .git."
     },
     "browser": {
       "type": "local",

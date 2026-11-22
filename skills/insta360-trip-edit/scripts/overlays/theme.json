@@ -1,0 +1,34 @@
+{
+ "accent": "#E8402A",
+ "display": {
+  "family": "Archivo Black",
+  "files": [
+   {
+    "file": "ArchivoBlack-Regular.ttf"
+   }
+  ]
+ },
+ "mono": {
+  "family": "Space Mono",
+  "files": [
+   {
+    "file": "SpaceMono-Bold.ttf",
+    "weight": "700"
+   },
+   {
+    "file": "SpaceMono-Regular.ttf",
+    "weight": "400"
+   }
+  ]
+ },
+ "local": {
+  "family": "Noto Sans JP",
+  "files": [
+   {
+    "file": "NotoSansJP.ttf",
+    "weight": "100 900"
+   }
+  ]
+ },
+ "_note": "Direction, not a lock-in: swap families/accent per trip (a different heavy display face, an accent taken from the place). Keep: one accent, white type with shadow, heavy display + mono + local script."
+}

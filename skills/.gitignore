@@ -6,28 +6,11 @@
 # No trailing slashes — git treats a symlink as a file, so "/name/" would fail to match.
 
 /browser
-/diagnose
-/find-skills
-/frontend-design
-/frontend-slides
 /grill-me
 /grill-with-docs
 /handoff
-/improve-codebase-architecture
-/remotion-best-practices
-/remotion-captions
-/remotion-create
-/remotion-docs
-/remotion-interactivity
-/remotion-maps
-/remotion-markup
-/remotion-multimedia
-/remotion-render
-/remotion-saas
-/remotion-upgrade
 /skill-creator
 /slides
-/zoom-out
 
 # noise
 .DS_Store
