@@ -1,16 +1,10 @@
 {
   "version": 1,
-  "comment": "Plugins the repo does NOT own, recorded as recipes rather than vendored — same rationale as vendor.json. `claude-plugins sync` installs anything missing and sets the enabled flags; `claude-plugins capture` adopts whatever you added via /plugin. This file owns the ALWAYS-ON baseline; mode-specific plugins live in config/mode-configs/ and are switched by use-claude / use-glm.",
+  "comment": "Plugins the repo does NOT own, recorded as recipes rather than vendored — same rationale as vendor.json. `claude-plugins sync` installs anything missing and sets the enabled flags; `claude-plugins capture` adopts whatever you added via /plugin.",
   "marketplaces": {
     "claude-plugins-official": {
       "source": "github",
       "repo": "anthropics/claude-plugins-official"
-    },
-    "zai-coding-plugins": {
-      "source": "directory",
-      "path": "~/.npm/_npx/2f024689b4d0d3b0/node_modules/@z_ai/coding-helper/zai-coding-plugins",
-      "bestEffort": true,
-      "note": "An npx cache path, so it will not exist on a fresh machine — run `npx @z_ai/coding-helper` first, then re-run sync. Only the marketplace is recorded: the plugins it serves (glm-plan-usage, glm-plan-bug) are mode-scoped in config/mode-configs/glm-2.template.json, not part of the baseline."
     }
   },
   "plugins": [

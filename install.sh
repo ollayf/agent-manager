@@ -259,36 +259,7 @@ case "$AGENT_FILTER" in
 esac
 
 head1 "Native settings"
-link_file "$MANAGER_CURRENT/config/mode-configs/claude.json" "$CLAUDE_DIR/mode-configs/claude.json"
 case "$AGENT_FILTER" in auto|codex|claude,codex|codex,claude) codex_adapter_install_settings ;; esac
-
-# Templates are rendered to REAL files, never symlinks: the rendered output holds live
-# tokens and must not be reachable from inside the repo.
-head1 "Rendering mode-configs from templates"
-if [ ! -f "$REPO/secrets.env" ]; then
-  warn "no secrets.env — copy secrets.env.example to secrets.env and fill it in"
-  warn "skipping glm.json / glm-2.json (use-glm will keep using whatever is there now)"
-else
-  for tpl in "$REPO"/config/mode-configs/*.template.json; do
-    [ -e "$tpl" ] || continue
-    out="$CLAUDE_DIR/mode-configs/$(basename "${tpl%.template.json}").json"
-    # Render to a temp file first so an unchanged result reports no pending action —
-    # otherwise --check would claim drift on every run.
-    tmp="$(mktemp)"
-    python3 "$REPO/lib/render.py" "$tpl" "$REPO/secrets.env" "$tmp"
-    if [ -f "$out" ] && cmp -s "$tmp" "$out"; then
-      info "$(shortp "$out") up to date"
-      rm -f "$tmp"
-    elif [ "$DRY_RUN" = 1 ]; then
-      run "render $(shortp "$tpl") -> $(shortp "$out")"
-      rm -f "$tmp"
-    else
-      ensure_dir "$(dirname "$out")"
-      mv "$tmp" "$out"; chmod 600 "$out"
-      ok "$(shortp "$out") rendered"
-    fi
-  done
-fi
 
 # ---------------------------------------------------------------- plugins
 

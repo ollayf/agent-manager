@@ -36,58 +36,6 @@ if [[ -r "$CLAUDE_HELPERS/config/profiles.list" ]]; then
   unset _p
 fi
 
-# ---------------------------------------------------------------- model modes
-#
-# Swap the primary account between Anthropic and GLM/BytePlus backends. Ported verbatim
-# from the pre-repo .zshrc. The mode-config files are rendered from templates by
-# install.sh and hold live tokens, so they stay outside the repo.
-
-_claude_current_profile() {
-  local state=~/.claude/.current_profile
-  [[ -f "$state" ]] && cat "$state" || echo "unknown"
-}
-
-_apply_claude_mode() {
-  local mode=$1
-  local config=~/.claude/mode-configs/${mode}.json
-  local other_mode
-  [[ "$mode" == "claude" ]] && other_mode="glm" || other_mode="claude"
-  local other_config=~/.claude/mode-configs/${other_mode}.json
-
-  if [[ ! -f "$config" ]]; then
-    echo "❌ Mode config not found: $config" >&2
-    echo "   Run: $CLAUDE_HELPERS/install.sh   (renders it from the template + secrets.env)" >&2
-    return 1
-  fi
-
-  # Smart merge: drop the other mode's plugins, add this mode's, preserve user-installed extras.
-  local merge_jq='
-    .env = $m.env
-    | .enabledPlugins = (
-        (.enabledPlugins // {})
-        | with_entries(select(.key as $k | ($other.enabledPlugins | has($k)) | not))
-        | . + $m.enabledPlugins
-      )
-    | .extraKnownMarketplaces = (
-        (.extraKnownMarketplaces // {})
-        | with_entries(select(.key as $k | ($other.extraKnownMarketplaces | has($k)) | not))
-        | . + $m.extraKnownMarketplaces
-      )
-  '
-
-  local tmp=$(mktemp)
-  jq --argjson m "$(cat "$config")" --argjson other "$(cat "$other_config")" \
-    "$merge_jq" ~/.claude/settings.json > "$tmp" && mv "$tmp" ~/.claude/settings.json
-
-  # Profile parity is automatic: claude-profile mirrors primary's enabledPlugins and
-  # extraKnownMarketplaces on every launch. Syncing here too would be a competing system.
-
-  echo "$mode" > ~/.claude/.current_profile
-}
-
-use-glm()    { _apply_claude_mode glm    && echo "✅ Switched to GLM"; }
-use-claude() { _apply_claude_mode claude && echo "✅ Switched to Claude"; }
-
 # ---------------------------------------------------------------- convenience
 
 # Jump to the repo; with an argument, straight into that skill.

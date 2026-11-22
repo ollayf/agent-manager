@@ -2,13 +2,6 @@
   "version": 1,
   "comment": "Frozen copies of every vendored skill, read only when upstream cannot be reached. Refresh with: agent-skills mirror. Restore with: agent-skills sync --offline. A diff here means upstream changed since capture — skills/ is the live path, never this.",
   "skills": {
-    "browser": {
-      "type": "local",
-      "capturedAt": "2026-08-30T21:07:17Z",
-      "files": 1,
-      "kb": 12,
-      "path": "~/compile/browser-harness"
-    },
     "grill-me": {
       "type": "skills-cli",
       "capturedAt": "2026-08-30T21:07:17Z",

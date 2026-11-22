@@ -176,12 +176,6 @@ else
   fail "Codex portable defaults are not installed"
 fi
 
-for m in claude glm glm-2; do
-  f="$CLAUDE_DIR/mode-configs/$m.json"
-  if [ ! -f "$f" ]; then fail "mode-configs/$m.json missing"
-  elif grep -q '\${' "$f" 2>/dev/null; then fail "mode-configs/$m.json still has an unrendered \${VAR}"
-  else ok "mode-configs/$m.json"; fi
-done
 [ -f "$REPO/secrets.env" ] && ok "secrets.env present" || warn "secrets.env missing — copy secrets.env.example"
 
 # ---------------------------------------------------------------- mirror

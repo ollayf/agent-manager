@@ -5,7 +5,6 @@
 #
 # No trailing slashes — git treats a symlink as a file, so "/name/" would fail to match.
 
-/browser
 /grill-me
 /grill-with-docs
 /handoff

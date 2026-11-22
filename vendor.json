@@ -42,13 +42,6 @@
       "mirrorExclude": [
         "examples/screenshots"
       ]
-    },
-    "browser": {
-      "type": "local",
-      "path": "~/compile/browser-harness",
-      "skillFile": "SKILL.md",
-      "upstream": "https://github.com/browser-use/browser-harness.git",
-      "note": "A directory holding one symlink to SKILL.md inside a separate local checkout."
     }
   }
 }

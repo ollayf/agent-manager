@@ -2,22 +2,12 @@
   "version": 1,
   "comment": "Portable MCP definitions. Credentials are referenced by variable name only (env, bearer_token_env); values live in the gitignored secrets.env or the environment. agent-mcp sync adds missing servers.",
   "servers": {
-    "web-search-prime": {
-      "transport": "http",
-      "url": "https://api.z.ai/api/mcp/web_search_prime/mcp",
-      "bearer_token_env": "GLM_ZAI_TOKEN",
-      "agents": ["claude"]
-    },
-    "web-reader": {
-      "transport": "http",
-      "url": "https://api.z.ai/api/mcp/web_reader/mcp",
-      "bearer_token_env": "GLM_ZAI_TOKEN",
-      "agents": ["claude"]
-    },
     "palmier-pro": {
       "transport": "http",
       "url": "http://127.0.0.1:19789/mcp",
-      "agents": ["claude"]
+      "agents": [
+        "claude"
+      ]
     }
   }
 }
