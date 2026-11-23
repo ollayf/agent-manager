@@ -8,6 +8,17 @@
       "agents": [
         "claude"
       ]
+    },
+    "browser": {
+      "transport": "stdio",
+      "command": "/Users/hosea/.local/share/mise/installs/node/26/bin/node",
+      "args": [
+        "/Users/hosea/.local/share/agent-manager/current/skills/browser/server.mjs"
+      ],
+      "agents": [
+        "claude",
+        "codex"
+      ]
     }
   }
 }
