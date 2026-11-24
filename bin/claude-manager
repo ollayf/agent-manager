@@ -184,12 +184,14 @@ cmd_push() {
   head1 "Repo invariants"
   if [ -d "$REPO/.git" ]; then
     local bad
-    bad="$(git -C "$REPO" ls-files -s 2>/dev/null | awk '$1==120000 {print $4}')"
-    if [ -n "$bad" ]; then
-      fail "symlinks are tracked (they break on another machine):"
+    # Relative links to tracked content inside the repo survive a clone; nothing else does.
+    if ! bad="$(python3 "$REPO/lib/tracked_links.py" "$REPO")"; then
+      fail "could not check tracked symlinks (lib/tracked_links.py failed)"
+    elif [ -n "$bad" ]; then
+      fail "tracked symlinks that break on another machine (absolute, outside the repo, or to untracked files):"
       printf '        %s\n' $bad
     else
-      ok "no symlink is tracked"
+      ok "tracked symlinks are relative and stay inside the repo"
     fi
   fi
 

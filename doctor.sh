@@ -124,12 +124,14 @@ if [ -d "$REPO/.git" ]; then
   if [ "$HAS_COMMIT" = 0 ]; then
     info "tracked-symlink and ownership checks — not yet meaningful, repo has no commit"
   else
-    bad="$(git -C "$REPO" ls-files -s skills/ | awk '$1==120000 {print $4}')"
-    if [ -n "$bad" ]; then
-      fail "symlinks are TRACKED in git (they will break on another machine):"
+    # Relative links to tracked content inside the repo survive a clone; nothing else does.
+    if ! bad="$(python3 "$REPO/lib/tracked_links.py" "$REPO" skills/)"; then
+      fail "could not check tracked symlinks (lib/tracked_links.py failed)"
+    elif [ -n "$bad" ]; then
+      fail "tracked symlinks that will break on another machine (absolute, outside the repo, or to untracked files):"
       printf '        %s\n' $bad
     else
-      ok "no symlink is tracked"
+      ok "tracked symlinks are relative and stay inside the repo"
     fi
     owned="$(git -C "$REPO" ls-files skills/ | cut -d/ -f2 | grep -v '^\.' | sort -u | tr '\n' ' ')"
     ok "repo-owned skills: ${owned:-<none>}"

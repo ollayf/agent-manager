@@ -87,6 +87,7 @@ claude-account remove claude4
   name variables, never token values; literal `headers` are rejected. `agent-mcp sync` adds
   missing servers, reading each value from the environment or `secrets.env`. Claude stores the
   rendered header in its own config; Codex reads the variable at runtime.
+- Claude and Codex plugins use separate manifests and native CLIs.
 
 ## The one local file
 
@@ -96,7 +97,24 @@ needs. `secrets.env.example` lists each key with a placeholder. To set up anothe
 recreated by logging in. Skills read their settings from environment variables or their own
 per-machine registries (for example, archive-general's `target add`), never from paths
 committed here.
-- Claude and Codex plugins use separate manifests and native CLIs.
+
+## Conversations and memory
+
+Sessions and memory are private and large, so they never go into Git. `agent-state` moves them
+as one encrypted bundle, organised by project:
+
+```bash
+agent-state export --dry-run     # old machine: what would go, and which secrets it found
+agent-state export               # writes exports/agent-state-<time>/ (gitignored)
+agent-state pack <bundle>        # encrypted .dmg to carry across
+agent-state import <bundle>      # new machine: preview; add --apply to write
+```
+
+It covers Claude transcripts, subagents, auto memory, prompt history, plans and checkpoints;
+Codex rollouts, prompt history and thread names; and each project's `CLAUDE.local.md`. Token
+shapes and every value in `secrets.env` are redacted in the copy. Import maps the old home
+folder to the new one (`--map OLD=NEW` for other moves), never overwrites, and backs up the
+histories it merges. Full instructions: [docs/agent-state-import.md](docs/agent-state-import.md).
 
 ## Commands
 
@@ -113,6 +131,7 @@ committed here.
 | `agent-skills sync --offline` | restore vendor skills from the committed mirror |
 | `agent-skills update\|adopt\|mirror\|status` | maintain skill ownership and recipes |
 | `agent-mcp sync\|status` | reconcile portable MCP definitions |
+| `agent-state export\|verify\|import\|pack` | move conversations and memory between machines |
 
 The old `claude-manager` and `claude-skills` names remain compatibility entrypoints.
 
