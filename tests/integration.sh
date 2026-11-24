@@ -3,11 +3,16 @@ set -euo pipefail
 
 SOURCE_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEST_ROOT="$(mktemp -d)"
+# The fixture is a full copy of this checkout, secrets.env included: never leave it behind.
+# An `if`, not `&&`: a false test as the trap's last command would turn a pass into exit 1.
+cleanup() { if [ -n "${TEST_ROOT:-}" ] && [ -d "$TEST_ROOT" ]; then rm -rf -- "$TEST_ROOT"; fi; }
+trap cleanup EXIT
 TEST_HOME="$TEST_ROOT/home"
 FIXTURE="$TEST_ROOT/claude-manager"
 STUB_BIN="$TEST_ROOT/bin"
 mkdir -p "$TEST_HOME" "$STUB_BIN"
-cp -R "$SOURCE_REPO/." "$FIXTURE/"
+# exports/ holds private conversation bundles (gigabytes); never copy them into a test fixture.
+rsync -a --exclude '/exports/' "$SOURCE_REPO/" "$FIXTURE/"
 
 # Tests focus on authored-skill topology. Vendor restoration has its own committed mirror and
 # would otherwise contact the network or retain this machine's absolute ignored symlinks.
@@ -73,7 +78,9 @@ CURRENT="$XDG_DATA_HOME/agent-manager/current"
 [ -d "$HOME/.codex/skills" ] || true  # manager must neither require nor replace this path
 
 grep -q '^# >>> agent-manager managed defaults >>>$' "$HOME/.codex/config.toml"
-grep -q '^model = "gpt-5.6-sol"$' "$HOME/.codex/config.toml"
+# The managed block carries whatever defaults.toml says; compare against it, not a model name.
+expected_model="$(grep '^model = ' "$FIXTURE/config/codex/defaults.toml")"
+[ -n "$expected_model" ] && grep -qxF "$expected_model" "$HOME/.codex/config.toml"
 grep -q '^\[projects."/tmp/example"\]$' "$HOME/.codex/config.toml"
 if python3 -c 'import tomllib' >/dev/null 2>&1; then
   python3 -c 'import tomllib; tomllib.load(open("'$HOME'/.codex/config.toml", "rb"))'

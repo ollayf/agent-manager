@@ -43,8 +43,8 @@ again.
 
 ```bash
 agent-state export --dry-run          # list projects, sizes and secret findings; writes nothing
-agent-state export                    # writes ~/agent-state-exports/agent-state-<time>/
-agent-state pack ~/agent-state-exports/agent-state-<time>    # encrypted .dmg, asks for a password
+agent-state export                    # writes exports/agent-state-<time>/ in the agent-manager repo
+agent-state pack <repo>/exports/agent-state-<time>    # encrypted .dmg beside it; asks for a password
 ```
 
 - Read `SECRETS-REPORT.txt`. Redacted tokens are replaced with `[REDACTED:<detector>]` in the
@@ -52,6 +52,8 @@ agent-state pack ~/agent-state-exports/agent-state-<time>    # encrypted .dmg, a
   that session from the bundle before packing.
 - The summary flags projects with `no remote`, `unpushed/dirty` or `not a git repo`. Their own
   code does not travel in this bundle, so push them first.
+- `exports/` is gitignored, and export refuses to run if that rule is removed. Use `--out DIR`
+  to write somewhere else, such as an external drive.
 - `--project PATH` (repeatable) exports only those projects and skips global history.
 - The bundle holds private conversations. Move it only as the encrypted `.dmg`, using AirDrop,
   a USB drive or a private cloud folder. Never put it in git.

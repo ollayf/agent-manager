@@ -27,6 +27,7 @@ from pathlib import Path
 
 FORMAT = 1
 REPO = Path(__file__).resolve().parents[1]
+EXPORTS = REPO / "exports"  # the default; gitignored, and the only place inside the repo we write
 sys.path.insert(0, str(REPO / "lib"))
 from render import load_env  # noqa: E402
 
@@ -77,6 +78,21 @@ def claude_roots():
 
 def slugify(path):
     return re.sub(r"[^A-Za-z0-9]", "-", str(path))
+
+
+def git_ignored(path):
+    """True when git would ignore path, or when the repo is not a git checkout (nothing to
+    commit into). Any other git failure counts as not ignored: this guard must fail closed."""
+    try:
+        inside = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--is-inside-work-tree"],
+                                capture_output=True, text=True)
+    except FileNotFoundError:
+        return True  # no git on this machine, so no commit can pick the bundle up
+    if inside.returncode != 0 or inside.stdout.strip() != "true":
+        return True
+    r = subprocess.run(["git", "-C", str(REPO), "check-ignore", "-q", "--no-index", str(path)],
+                       capture_output=True)
+    return r.returncode == 0
 
 
 def is_within(path, parent):
@@ -401,9 +417,14 @@ def cmd_export(args):
     names, glob = collect(args.project)
     if not args.dry_run:
         out = Path(args.out).expanduser().resolve()
-        for forbidden in (REPO, home() / ".claude", codex_home(), home() / ".claude-profiles"):
+        for forbidden in (home() / ".claude", codex_home(), home() / ".claude-profiles"):
             if is_within(out, forbidden):
                 die(f"refusing to write the bundle inside {forbidden}")
+        if is_within(out, REPO):
+            if not is_within(out, EXPORTS):
+                die(f"inside this repo a bundle may only go in {EXPORTS} (gitignored)")
+            if not git_ignored(EXPORTS / "agent-state-probe"):
+                die(f"{EXPORTS} is not gitignored; add `/exports/` to {REPO / '.gitignore'} first")
         stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
         bundle = out / f"agent-state-{stamp}"
         bundle.mkdir(parents=True, mode=0o700)
@@ -899,7 +920,7 @@ def main():
     ap = argparse.ArgumentParser(prog="agent-state", description=__doc__.split("\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
     e = sub.add_parser("export", help="write a bundle of conversations and memory")
-    e.add_argument("--out", default=str(home() / "agent-state-exports"))
+    e.add_argument("--out", default=str(EXPORTS), help=f"parent folder (default: {EXPORTS})")
     e.add_argument("--project", action="append", help="only this project path (repeatable)")
     e.add_argument("--dry-run", action="store_true", help="scan and list, write nothing")
     e.add_argument("--no-redact", action="store_true", help="keep detected secrets (report only)")

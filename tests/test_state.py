@@ -316,6 +316,62 @@ class StateTest(unittest.TestCase):
         self.assertTrue((self.new / ".codex/state_5.sqlite").exists())
         self.assertFalse((self.new / ".claude").exists())  # refused before copying anything
 
+    def fake_repo(self):
+        """A throwaway copy of the tool in its own git checkout, so the real repo's exports/
+        is never written by tests."""
+        repo = self.tmp / "manager"
+        repo.mkdir()
+        for sub in ("bin", "lib", "docs"):
+            subprocess.run(["cp", "-R", str(REPO / sub), str(repo / sub)], check=True)
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        (repo / ".gitignore").write_text("/exports/\n")
+        return repo
+
+    def run_copy(self, repo, *args):
+        env = dict(os.environ, HOME=str(self.old), AGENT_SECRETS_FILE=str(self.secrets),
+                   PYTHONDONTWRITEBYTECODE="1")
+        env.pop("CODEX_HOME", None)
+        return subprocess.run([str(repo / "bin/agent-state"), *args], env=env, capture_output=True, text=True)
+
+    def test_default_export_goes_to_the_ignored_exports_folder(self):
+        repo = self.fake_repo()
+        r = self.run_copy(repo, "export")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        (bundle,) = (repo / "exports").iterdir()
+        self.assertTrue((bundle / "MANIFEST.json").is_file())
+        status = subprocess.run(["git", "-C", str(repo), "status", "--porcelain", "--untracked-files=all"],
+                                capture_output=True, text=True).stdout
+        self.assertNotIn("exports", status)
+
+    def test_export_refuses_other_repo_folders_and_an_unignored_exports(self):
+        repo = self.fake_repo()
+        r = self.run_copy(repo, "export", "--out", str(repo / "docs"))
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("may only go in", r.stderr)
+        (repo / ".gitignore").write_text("*.pyc\n")
+        r = self.run_copy(repo, "export")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("is not gitignored", r.stderr)
+        self.assertFalse((repo / "exports").exists())
+
+    def test_exports_check_fails_closed_when_git_errors(self):
+        repo = self.fake_repo()
+        fake = self.tmp / "gitbin"
+        fake.mkdir()
+        real_git = subprocess.run(["which", "git"], capture_output=True, text=True).stdout.strip()
+        # Behaves like git inside a work tree, but check-ignore fails the way a broken repo would.
+        (fake / "git").write_text("#!/bin/sh\n"
+                                  'case " $* " in *" check-ignore "*) exit 128;; esac\n'
+                                  f'exec "{real_git}" "$@"\n')
+        (fake / "git").chmod(0o755)
+        env = dict(os.environ, HOME=str(self.old), AGENT_SECRETS_FILE=str(self.secrets),
+                   PYTHONDONTWRITEBYTECODE="1", PATH=f"{fake}:{os.environ['PATH']}")
+        env.pop("CODEX_HOME", None)
+        r = subprocess.run([str(repo / "bin/agent-state"), "export"], env=env, capture_output=True, text=True)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("is not gitignored", r.stderr)
+        self.assertFalse((repo / "exports").exists())
+
     def test_export_refuses_to_write_inside_agent_folders(self):
         r = self.run_tool(self.old, "export", "--out", str(self.old / ".claude/x"), ok=False)
         self.assertNotEqual(r.returncode, 0)

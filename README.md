@@ -105,7 +105,7 @@ as one encrypted bundle, organised by project:
 
 ```bash
 agent-state export --dry-run     # old machine: what would go, and which secrets it found
-agent-state export               # writes ~/agent-state-exports/agent-state-<time>/
+agent-state export               # writes exports/agent-state-<time>/ (gitignored)
 agent-state pack <bundle>        # encrypted .dmg to carry across
 agent-state import <bundle>      # new machine: preview; add --apply to write
 ```

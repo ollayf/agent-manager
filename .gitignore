@@ -25,7 +25,8 @@ __pycache__/
 /skills/.trash/
 
 # --- agent-state bundles: private conversations, never committed ---
-# `agent-state export` refuses to write inside this repo; these catch a bundle or .dmg copied in.
+# `agent-state export` writes to exports/ by default and refuses any other folder in this repo,
+# or exports/ itself if this rule is removed. The rest catch a bundle or .dmg copied elsewhere.
+/exports/
 agent-state-*/
-agent-state-exports/
 *.dmg
